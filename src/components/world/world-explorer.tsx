@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { WorkDetail } from "@/components/work/work-detail";
@@ -73,7 +73,15 @@ function getDefaultCamera({
   };
 }
 
-type WorldEventKind = "storm" | "battle" | "greatLeader" | "invention";
+type WorldEventKind =
+  | "storm"
+  | "battle"
+  | "greatLeader"
+  | "invention"
+  | "festival"
+  | "trade"
+  | "discovery"
+  | "sabotage";
 
 type WorldEvent = {
   id: string;
@@ -89,6 +97,10 @@ type WorldEvent = {
   markerLabel: string;
 };
 
+type ActiveWorldEvent = WorldEvent & {
+  expiresAt: number;
+};
+
 const worldEventTheme: Record<
   WorldEventKind,
   { accent: string; badge: string; markerLabel: string }
@@ -97,6 +109,10 @@ const worldEventTheme: Record<
   battle: { accent: "#d59750", badge: "Conflict", markerLabel: "Battle" },
   greatLeader: { accent: "#f4d38d", badge: "Leader", markerLabel: "Great Leader" },
   invention: { accent: "#95dab7", badge: "Breakthrough", markerLabel: "Invention" },
+  festival: { accent: "#e6aa72", badge: "Culture", markerLabel: "Festival" },
+  trade: { accent: "#d2c77e", badge: "Trade", markerLabel: "Caravan" },
+  discovery: { accent: "#80cadc", badge: "Discovery", markerLabel: "Expedition" },
+  sabotage: { accent: "#c77b66", badge: "Intrigue", markerLabel: "Sabotage" },
 };
 
 function chooseRandomItem<T>(items: T[]) {
@@ -107,20 +123,42 @@ function chooseRandomItem<T>(items: T[]) {
   return items[Math.floor(Math.random() * items.length)] ?? null;
 }
 
+function chooseRandomWithFallback<T>(preferredItems: T[], fallbackItems: T[]) {
+  return chooseRandomItem(preferredItems.length > 0 ? preferredItems : fallbackItems);
+}
+
+function getWorldEventRouteKey(from?: string, to?: string) {
+  if (!from || !to) {
+    return null;
+  }
+
+  return [from, to].sort().join("::");
+}
+
 function buildWorldEvent({
   eventId,
   cities,
   routes,
+  forcedKind,
+  avoidKinds = [],
+  avoidCitySlugs = [],
+  avoidRouteKeys = [],
 }: {
   eventId: number;
   cities: WorldRenderModel["states"][number]["cities"];
   routes: WorldRenderModel["states"][number]["routes"];
+  forcedKind?: WorldEventKind;
+  avoidKinds?: WorldEventKind[];
+  avoidCitySlugs?: string[];
+  avoidRouteKeys?: string[];
 }) {
   if (cities.length === 0) {
     return null;
   }
 
   const cityTitles = new Map(cities.map((city) => [city.slug, city.title]));
+  const avoidedCities = new Set(avoidCitySlugs);
+  const avoidedRoutes = new Set(avoidRouteKeys);
   const routeMap = new Map<string, string[]>();
 
   routes.forEach((route) => {
@@ -131,17 +169,22 @@ function buildWorldEvent({
     routeMap.set(route.to, [...(routeMap.get(route.to) ?? []), route.from]);
   });
 
-  const battleCities = cities.filter((city) => (routeMap.get(city.slug)?.length ?? 0) > 0);
-  const availableKinds: WorldEventKind[] = battleCities.length
-    ? ["storm", "battle", "greatLeader", "invention"]
-    : ["storm", "greatLeader", "invention"];
-  const kind = chooseRandomItem(availableKinds);
+  const routeCities = cities.filter((city) => (routeMap.get(city.slug)?.length ?? 0) > 0);
+  const availableKinds: WorldEventKind[] = routeCities.length
+    ? ["storm", "battle", "greatLeader", "invention", "festival", "trade", "discovery", "sabotage"]
+    : ["storm", "greatLeader", "invention", "festival", "discovery", "sabotage"];
+  const kindChoices = availableKinds.filter((entry) => !avoidKinds.includes(entry));
+  const kind = forcedKind && availableKinds.includes(forcedKind)
+    ? forcedKind
+    : chooseRandomWithFallback(kindChoices, availableKinds);
   if (!kind) {
     return null;
   }
 
   const theme = worldEventTheme[kind];
-  const sourceCity = chooseRandomItem(kind === "battle" ? battleCities : cities);
+  const sourceCities = kind === "battle" || kind === "trade" ? routeCities : cities;
+  const preferredSourceCities = sourceCities.filter((city) => !avoidedCities.has(city.slug));
+  const sourceCity = chooseRandomWithFallback(preferredSourceCities, sourceCities);
   if (!sourceCity) {
     return null;
   }
@@ -161,7 +204,12 @@ function buildWorldEvent({
   }
 
   if (kind === "battle") {
-    const targetSlug = chooseRandomItem(routeMap.get(sourceCity.slug) ?? []);
+    const targetOptions = routeMap.get(sourceCity.slug) ?? [];
+    const preferredTargets = targetOptions.filter((target) => {
+      const routeKey = getWorldEventRouteKey(sourceCity.slug, target);
+      return !avoidedCities.has(target) && (!routeKey || !avoidedRoutes.has(routeKey));
+    });
+    const targetSlug = chooseRandomWithFallback(preferredTargets, targetOptions);
     const targetCityTitle = targetSlug ? cityTitles.get(targetSlug) : null;
     return {
       id: `world-event-${eventId}`,
@@ -182,6 +230,33 @@ function buildWorldEvent({
     } satisfies WorldEvent;
   }
 
+  if (kind === "trade") {
+    const targetOptions = routeMap.get(sourceCity.slug) ?? [];
+    const preferredTargets = targetOptions.filter((target) => {
+      const routeKey = getWorldEventRouteKey(sourceCity.slug, target);
+      return !avoidedCities.has(target) && (!routeKey || !avoidedRoutes.has(routeKey));
+    });
+    const targetSlug = chooseRandomWithFallback(preferredTargets, targetOptions);
+    const targetCityTitle = targetSlug ? cityTitles.get(targetSlug) : null;
+    return {
+      id: `world-event-${eventId}`,
+      kind,
+      citySlug: sourceCity.slug,
+      cityTitle: sourceCity.title,
+      targetCitySlug: targetSlug ?? undefined,
+      targetCityTitle: targetCityTitle ?? undefined,
+      title: targetCityTitle
+        ? `Trade Caravan: ${sourceCity.title} to ${targetCityTitle}`
+        : `Trade Caravan Leaves ${sourceCity.title}`,
+      detail: targetCityTitle
+        ? `A loaded caravan is moving between ${sourceCity.title} and ${targetCityTitle}, carrying materials, ideas, and momentum across the road network.`
+        : `A loaded caravan has rolled out of ${sourceCity.title}, carrying materials, ideas, and momentum across the road network.`,
+      accent: theme.accent,
+      badge: theme.badge,
+      markerLabel: theme.markerLabel,
+    } satisfies WorldEvent;
+  }
+
   if (kind === "greatLeader") {
     return {
       id: `world-event-${eventId}`,
@@ -190,6 +265,48 @@ function buildWorldEvent({
       cityTitle: sourceCity.title,
       title: `Great Leader Rises in ${sourceCity.title}`,
       detail: `${sourceCity.title} has rallied around a new leader, boosting morale, output, and ambition across the district.`,
+      accent: theme.accent,
+      badge: theme.badge,
+      markerLabel: theme.markerLabel,
+    } satisfies WorldEvent;
+  }
+
+  if (kind === "festival") {
+    return {
+      id: `world-event-${eventId}`,
+      kind,
+      citySlug: sourceCity.slug,
+      cityTitle: sourceCity.title,
+      title: `Festival in ${sourceCity.title}`,
+      detail: `${sourceCity.title} is celebrating a public milestone, turning local progress into morale, attention, and new creative energy.`,
+      accent: theme.accent,
+      badge: theme.badge,
+      markerLabel: theme.markerLabel,
+    } satisfies WorldEvent;
+  }
+
+  if (kind === "discovery") {
+    return {
+      id: `world-event-${eventId}`,
+      kind,
+      citySlug: sourceCity.slug,
+      cityTitle: sourceCity.title,
+      title: `Discovery Near ${sourceCity.title}`,
+      detail: `An expedition outside ${sourceCity.title} has uncovered a promising lead, revealing a new path through the fog of work still ahead.`,
+      accent: theme.accent,
+      badge: theme.badge,
+      markerLabel: theme.markerLabel,
+    } satisfies WorldEvent;
+  }
+
+  if (kind === "sabotage") {
+    return {
+      id: `world-event-${eventId}`,
+      kind,
+      citySlug: sourceCity.slug,
+      cityTitle: sourceCity.title,
+      title: `Sabotage Reported in ${sourceCity.title}`,
+      detail: `A fragile system in ${sourceCity.title} has been disrupted, forcing emergency repairs before the local machine can return to full speed.`,
       accent: theme.accent,
       badge: theme.badge,
       markerLabel: theme.markerLabel,
@@ -207,6 +324,102 @@ function buildWorldEvent({
     badge: theme.badge,
     markerLabel: theme.markerLabel,
   } satisfies WorldEvent;
+}
+
+function WorldEventEffect({ event }: { event: WorldEvent }) {
+  if (event.kind === "storm") {
+    return (
+      <div className="world-event-effect world-event-effect-storm" data-testid="world-event-effect-storm">
+        <span className="storm-cloud storm-cloud-left" />
+        <span className="storm-cloud storm-cloud-right" />
+        <span className="storm-rain storm-rain-left" />
+        <span className="storm-rain storm-rain-right" />
+        <span className="storm-lightning" />
+      </div>
+    );
+  }
+
+  if (event.kind === "battle") {
+    return (
+      <div className="world-event-effect world-event-effect-battle" data-testid="world-event-effect-battle">
+        <span className="battle-blast" />
+        <span className="battle-sword battle-sword-left" />
+        <span className="battle-sword battle-sword-right" />
+        <span className="battle-spark battle-spark-top" />
+        <span className="battle-spark battle-spark-bottom" />
+      </div>
+    );
+  }
+
+  if (event.kind === "greatLeader") {
+    return (
+      <div className="world-event-effect world-event-effect-leader" data-testid="world-event-effect-greatLeader">
+        <span className="leader-standard" />
+        <span className="leader-banner" />
+        <span className="leader-crown" />
+        <span className="leader-rays" />
+      </div>
+    );
+  }
+
+  if (event.kind === "festival") {
+    return (
+      <div className="world-event-effect world-event-effect-festival" data-testid="world-event-effect-festival">
+        <span className="festival-lantern festival-lantern-left" />
+        <span className="festival-lantern festival-lantern-right" />
+        <span className="festival-burst festival-burst-top" />
+        <span className="festival-burst festival-burst-bottom" />
+        <span className="festival-stage" />
+      </div>
+    );
+  }
+
+  if (event.kind === "trade") {
+    return (
+      <div className="world-event-effect world-event-effect-trade" data-testid="world-event-effect-trade">
+        <span className="trade-cart" />
+        <span className="trade-wheel trade-wheel-left" />
+        <span className="trade-wheel trade-wheel-right" />
+        <span className="trade-crate" />
+        <span className="trade-arrow" />
+      </div>
+    );
+  }
+
+  if (event.kind === "discovery") {
+    return (
+      <div className="world-event-effect world-event-effect-discovery" data-testid="world-event-effect-discovery">
+        <span className="discovery-lens" />
+        <span className="discovery-handle" />
+        <span className="discovery-star discovery-star-one" />
+        <span className="discovery-star discovery-star-two" />
+        <span className="discovery-sweep" />
+      </div>
+    );
+  }
+
+  if (event.kind === "sabotage") {
+    return (
+      <div className="world-event-effect world-event-effect-sabotage" data-testid="world-event-effect-sabotage">
+        <span className="sabotage-bomb" />
+        <span className="sabotage-fuse" />
+        <span className="sabotage-spark sabotage-spark-one" />
+        <span className="sabotage-spark sabotage-spark-two" />
+        <span className="sabotage-smoke" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="world-event-effect world-event-effect-invention" data-testid="world-event-effect-invention">
+      <span className="invention-core" />
+      <span className="invention-ring invention-ring-one" />
+      <span className="invention-ring invention-ring-two" />
+      <span className="invention-spark invention-spark-one" />
+      <span className="invention-spark invention-spark-two" />
+      <span className="invention-spark invention-spark-three" />
+    </div>
+  );
 }
 
 function buildIntroMapState({
@@ -253,6 +466,7 @@ declare global {
     __CIVFOLIO_WORLD_EVENT_MIN_MS?: number;
     __CIVFOLIO_WORLD_EVENT_MAX_MS?: number;
     __CIVFOLIO_WORLD_EVENT_DURATION_MS?: number;
+    __CIVFOLIO_WORLD_EVENT_KIND?: WorldEventKind;
   }
 }
 
@@ -282,8 +496,12 @@ export function WorldExplorer({
   const introCueKeyRef = useRef<string | null>(null);
   const introActiveRef = useRef(site.scene.introEnabled);
   const introPanelVisibleRef = useRef(false);
-  const worldEventCueRef = useRef<string | null>(null);
+  const worldEventCueRef = useRef<Set<string>>(new Set());
   const worldEventNonceRef = useRef(0);
+  const activeWorldEventsRef = useRef<ActiveWorldEvent[]>([]);
+  const worldEventKindHistoryRef = useRef<WorldEventKind[]>([]);
+  const worldEventCityHistoryRef = useRef<string[]>([]);
+  const worldEventRouteHistoryRef = useRef<string[]>([]);
   const worldEventContextRef = useRef({
     currentState: world.states[world.years[world.years.length - 1]],
     visibleCities: [] as typeof world.states[number]["cities"],
@@ -315,7 +533,7 @@ export function WorldExplorer({
   const [showMobileTimelineDetails, setShowMobileTimelineDetails] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [showCreatorPrompt, setShowCreatorPrompt] = useState(false);
-  const [activeWorldEvent, setActiveWorldEvent] = useState<WorldEvent | null>(null);
+  const [activeWorldEvents, setActiveWorldEvents] = useState<ActiveWorldEvent[]>([]);
   const audio = useWorldAudio(site.audio);
   const { playIntroCue, playIntroTransition, playWorldEventCue } = audio;
   const isTablet = containerSize.width < 1100;
@@ -459,9 +677,6 @@ export function WorldExplorer({
     selectedWorkPanel.retained?.code?.repo &&
     github.repos[`${selectedWorkPanel.retained.code.repo.owner}/${selectedWorkPanel.retained.code.repo.name}`];
   const introProgress = introSequence.length > 0 ? (introIndex + 1) / introSequence.length : 0;
-  const activeEventCity = activeWorldEvent
-    ? currentState.cities.find((city) => city.slug === activeWorldEvent.citySlug) ?? null
-    : null;
   const viewportSize = useMemo(
     () => ({
       width: Math.max(1, containerSize.width),
@@ -580,7 +795,7 @@ export function WorldExplorer({
     setIntroActive(true);
   }
 
-  function stopIntro() {
+  function stopIntro({ resetCamera = false }: { resetCamera?: boolean } = {}) {
     if (introTimeoutRef.current) {
       window.clearTimeout(introTimeoutRef.current);
       introTimeoutRef.current = null;
@@ -589,8 +804,13 @@ export function WorldExplorer({
     introCueKeyRef.current = null;
     setShowMobileControls(false);
     setShowMobileTimelineDetails(false);
+    if (!introActiveRef.current) {
+      return;
+    }
     setSelectedYear(latestYear);
-    setCameraTarget(defaultCamera);
+    if (resetCamera) {
+      setCameraTarget(defaultCamera);
+    }
     setIntroActive(false);
   }
 
@@ -664,9 +884,29 @@ export function WorldExplorer({
     return worldPointToLocalPoint({ x, y }, camera, viewportSize, containerSize);
   }
 
-  const activeEventScreenPoint = activeEventCity
-    ? worldPointToScreen(activeEventCity.x, activeEventCity.y)
-    : null;
+  function getWorldEventPoint(event: WorldEvent) {
+    const sourceCity = currentState.cities.find((city) => city.slug === event.citySlug);
+    if (!sourceCity) {
+      return null;
+    }
+
+    if ((event.kind === "battle" || event.kind === "trade") && event.targetCitySlug) {
+      const targetCity = currentState.cities.find((city) => city.slug === event.targetCitySlug);
+      if (targetCity) {
+        return {
+          x: (sourceCity.x + targetCity.x) / 2,
+          y: (sourceCity.y + targetCity.y) / 2,
+        };
+      }
+    }
+
+    return { x: sourceCity.x, y: sourceCity.y };
+  }
+
+  function getWorldEventScreenPoint(event: WorldEvent) {
+    const point = getWorldEventPoint(event);
+    return point ? worldPointToScreen(point.x, point.y) : null;
+  }
 
   function clampCardPosition(x: number, y: number, width: number, height: number) {
     return {
@@ -742,6 +982,10 @@ export function WorldExplorer({
   }
 
   useEffect(() => {
+    activeWorldEventsRef.current = activeWorldEvents;
+  }, [activeWorldEvents]);
+
+  useEffect(() => {
     if (!selectedCity) {
       return;
     }
@@ -773,20 +1017,24 @@ export function WorldExplorer({
       return;
     }
 
-    setActiveWorldEvent(null);
+    worldEventCueRef.current.clear();
+    worldEventKindHistoryRef.current = [];
+    worldEventCityHistoryRef.current = [];
+    worldEventRouteHistoryRef.current = [];
+    setActiveWorldEvents([]);
   }, [introActive]);
 
   useEffect(() => {
-    if (!activeWorldEvent) {
-      worldEventCueRef.current = null;
-      return;
-    }
-
-    const cityStillVisible = visibleCities.some((city) => city.slug === activeWorldEvent.citySlug);
-    if (!cityStillVisible) {
-      setActiveWorldEvent(null);
-    }
-  }, [activeWorldEvent, visibleCities]);
+    setActiveWorldEvents((current) => {
+      const next = current.filter((event) => {
+        const sourceStillVisible = visibleCities.some((city) => city.slug === event.citySlug);
+        const targetStillVisible =
+          !event.targetCitySlug || visibleCities.some((city) => city.slug === event.targetCitySlug);
+        return sourceStillVisible && targetStillVisible;
+      });
+      return next.length === current.length ? current : next;
+    });
+  }, [visibleCities]);
 
   useEffect(() => {
     if (!introActive && introCancelledRef.current) {
@@ -811,65 +1059,154 @@ export function WorldExplorer({
   }, [introPanelVisible, playIntroTransition]);
 
   useEffect(() => {
-    if (introActive || activeWorldEvent || visibleCities.length === 0) {
+    if (introActive || visibleCities.length === 0) {
       return;
     }
 
-    const minMs = window.__CIVFOLIO_WORLD_EVENT_MIN_MS ?? 150_000;
-    const maxMs = Math.max(minMs, window.__CIVFOLIO_WORLD_EVENT_MAX_MS ?? 270_000);
-    const delayMs = minMs + Math.random() * (maxMs - minMs);
-    const timeout = window.setTimeout(() => {
-      const latest = worldEventContextRef.current;
-      const candidateCities = latest.visibleCities.filter((city) => {
-        const point = worldPointToLocalPoint(
-          { x: city.x, y: city.y },
-          latest.camera,
-          {
-            width: Math.max(1, latest.containerSize.width),
-            height: Math.max(1, latest.containerSize.height),
-          },
-          latest.containerSize,
-        );
+    let timeout: number | null = null;
+    let cancelled = false;
 
-        return (
-          point.x >= 72 &&
-          point.x <= latest.containerSize.width - 72 &&
-          point.y >= 110 &&
-          point.y <= latest.containerSize.height - 110
-        );
-      });
+    const scheduleNextEvent = () => {
+      const minMs = window.__CIVFOLIO_WORLD_EVENT_MIN_MS ?? 55_000;
+      const maxMs = Math.max(minMs, window.__CIVFOLIO_WORLD_EVENT_MAX_MS ?? 85_000);
+      const delayMs = minMs + Math.random() * (maxMs - minMs);
+      timeout = window.setTimeout(() => {
+        if (cancelled) {
+          return;
+        }
 
-      const nextEvent = buildWorldEvent({
-        eventId: ++worldEventNonceRef.current,
-        cities: candidateCities.length > 0 ? candidateCities : latest.visibleCities,
-        routes: latest.currentState.routes,
-      });
+        const latest = worldEventContextRef.current;
+        const activeEvents = activeWorldEventsRef.current;
+        const activeEventCitySlugs = activeEvents.flatMap((event) => [
+          event.citySlug,
+          ...(event.targetCitySlug ? [event.targetCitySlug] : []),
+        ]);
+        const activeEventRouteKeys = activeEvents
+          .map((event) => getWorldEventRouteKey(event.citySlug, event.targetCitySlug))
+          .filter((key): key is string => Boolean(key));
+        const activeEventKinds = activeEvents.map((event) => event.kind);
+        const avoidKinds = [
+          ...activeEventKinds,
+          ...worldEventKindHistoryRef.current,
+        ];
+        const avoidCitySlugs = [
+          ...activeEventCitySlugs,
+          ...worldEventCityHistoryRef.current,
+        ];
+        const avoidRouteKeys = [
+          ...activeEventRouteKeys,
+          ...worldEventRouteHistoryRef.current,
+        ];
+        const candidateCities = latest.visibleCities.filter((city) => {
+          const point = worldPointToLocalPoint(
+            { x: city.x, y: city.y },
+            latest.camera,
+            {
+              width: Math.max(1, latest.containerSize.width),
+              height: Math.max(1, latest.containerSize.height),
+            },
+            latest.containerSize,
+          );
 
-      if (nextEvent) {
-        setActiveWorldEvent(nextEvent);
+          return (
+            point.x >= 72 &&
+            point.x <= latest.containerSize.width - 72 &&
+            point.y >= 110 &&
+            point.y <= latest.containerSize.height - 110 &&
+            !activeEventCitySlugs.includes(city.slug)
+          );
+        });
+
+        const nextEvent = buildWorldEvent({
+          eventId: ++worldEventNonceRef.current,
+          cities: candidateCities.length > 0 ? candidateCities : latest.visibleCities,
+          routes: latest.currentState.routes,
+          forcedKind: window.__CIVFOLIO_WORLD_EVENT_KIND,
+          avoidKinds: window.__CIVFOLIO_WORLD_EVENT_KIND ? [] : avoidKinds,
+          avoidCitySlugs,
+          avoidRouteKeys,
+        });
+
+        if (nextEvent) {
+          const durationMs = window.__CIVFOLIO_WORLD_EVENT_DURATION_MS ?? 24_000;
+          const routeKey = getWorldEventRouteKey(nextEvent.citySlug, nextEvent.targetCitySlug);
+          worldEventKindHistoryRef.current = [
+            nextEvent.kind,
+            ...worldEventKindHistoryRef.current.filter((kind) => kind !== nextEvent.kind),
+          ].slice(0, 3);
+          worldEventCityHistoryRef.current = [
+            nextEvent.citySlug,
+            ...(nextEvent.targetCitySlug ? [nextEvent.targetCitySlug] : []),
+            ...worldEventCityHistoryRef.current.filter(
+              (slug) => slug !== nextEvent.citySlug && slug !== nextEvent.targetCitySlug,
+            ),
+          ].slice(0, 8);
+          worldEventRouteHistoryRef.current = routeKey
+            ? [
+                routeKey,
+                ...worldEventRouteHistoryRef.current.filter((entry) => entry !== routeKey),
+              ].slice(0, 5)
+            : worldEventRouteHistoryRef.current.slice(0, 5);
+          setActiveWorldEvents((current) => {
+            const next = [
+              ...current,
+              {
+                ...nextEvent,
+                expiresAt: Date.now() + durationMs,
+              },
+            ].slice(-4);
+            activeWorldEventsRef.current = next;
+            return next;
+          });
+        }
+
+        scheduleNextEvent();
+      }, delayMs);
+    };
+
+    scheduleNextEvent();
+
+    return () => {
+      cancelled = true;
+      if (timeout) {
+        window.clearTimeout(timeout);
       }
-    }, delayMs);
-
-    return () => window.clearTimeout(timeout);
-  }, [activeWorldEvent, introActive, visibleCities.length]);
+    };
+  }, [introActive, visibleCities.length]);
 
   useEffect(() => {
-    if (!activeWorldEvent) {
+    const activeIds = new Set(activeWorldEvents.map((event) => event.id));
+    worldEventCueRef.current.forEach((id) => {
+      if (!activeIds.has(id)) {
+        worldEventCueRef.current.delete(id);
+      }
+    });
+
+    activeWorldEvents.forEach((event) => {
+      if (worldEventCueRef.current.has(event.id)) {
+        return;
+      }
+
+      playWorldEventCue(event.kind);
+      worldEventCueRef.current.add(event.id);
+    });
+
+    if (activeWorldEvents.length === 0) {
       return;
     }
 
-    if (worldEventCueRef.current !== activeWorldEvent.id) {
-      playWorldEventCue(activeWorldEvent.kind);
-      worldEventCueRef.current = activeWorldEvent.id;
-    }
-
-    const durationMs = window.__CIVFOLIO_WORLD_EVENT_DURATION_MS ?? 18_000;
+    const nextExpiry = Math.min(...activeWorldEvents.map((event) => event.expiresAt));
     const timeout = window.setTimeout(() => {
-      setActiveWorldEvent((current) => (current?.id === activeWorldEvent.id ? null : current));
-    }, durationMs);
+      const now = Date.now();
+      setActiveWorldEvents((current) => {
+        const next = current.filter((event) => event.expiresAt > now);
+        activeWorldEventsRef.current = next;
+        return next;
+      });
+    }, Math.max(0, nextExpiry - Date.now()));
 
     return () => window.clearTimeout(timeout);
-  }, [activeWorldEvent, playWorldEventCue]);
+  }, [activeWorldEvents, playWorldEventCue]);
 
   useEffect(() => {
     if (!introActive || introSequence.length === 0 || selectedSlug || showLeader) {
@@ -1285,7 +1622,7 @@ export function WorldExplorer({
                 <OverlayButton
                   onClick={() => {
                     audio.playUiClick("close");
-                    stopIntro();
+                    stopIntro({ resetCamera: true });
                   }}
                   className={isMobile ? "min-h-8 px-4 py-1.5 text-[8px] tracking-[0.16em]" : undefined}
                 >
@@ -1296,82 +1633,53 @@ export function WorldExplorer({
           </div>
         ) : null}
 
-        {activeWorldEvent && activeEventScreenPoint ? (
-          <>
-            <div
-              data-testid="world-event-marker"
-              data-city-slug={activeWorldEvent.citySlug}
-              data-event-kind={activeWorldEvent.kind}
-              className="pointer-events-none absolute z-[24]"
-              style={{
-                left: clamp(activeEventScreenPoint.x - 56, 12, containerSize.width - 112),
-                top: clamp(activeEventScreenPoint.y - 88, 12, containerSize.height - 90),
-              }}
-            >
-              <div className="flex flex-col items-center gap-2">
-                <div
-                  className="animate-pulse rounded-full border px-3 py-1 text-[10px] uppercase tracking-[0.24em] text-[var(--parchment)] shadow-[0_12px_32px_rgba(0,0,0,0.28)]"
-                  style={{
-                    borderColor: `${activeWorldEvent.accent}aa`,
-                    background: "rgba(14,10,8,0.82)",
-                    boxShadow: `0 0 0 1px ${activeWorldEvent.accent}33`,
-                  }}
-                >
-                  {activeWorldEvent.markerLabel}
-                </div>
-                <div
-                  className="h-6 w-6 rounded-full border-2 shadow-[0_10px_22px_rgba(0,0,0,0.24)]"
-                  style={{
-                    borderColor: activeWorldEvent.accent,
-                    background: "rgba(16,11,9,0.88)",
-                    boxShadow: `0 0 0 8px ${activeWorldEvent.accent}1f`,
-                  }}
-                />
-              </div>
-            </div>
+        {activeWorldEvents.map((event) => {
+          const eventScreenPoint = getWorldEventScreenPoint(event);
+          if (!eventScreenPoint) {
+            return null;
+          }
 
-            <div
-              data-testid="world-event-card"
-              data-city-slug={activeWorldEvent.citySlug}
-              data-event-kind={activeWorldEvent.kind}
-              className={cn(
-                "pointer-events-none absolute inset-x-4 z-[23] flex",
-                isMobile
-                  ? showMobileTimelineDetails
-                    ? "bottom-[12.5rem] justify-center"
-                    : "bottom-[7rem] justify-center"
-                  : "top-28 justify-center xl:justify-end",
-              )}
-            >
+          return (
+            <Fragment key={event.id}>
               <div
-                className={cn(
-                  "panel-enter hud-drift rounded-[24px] border bg-[rgba(16,11,9,0.84)] px-4 py-4 text-[var(--muted-soft)] shadow-[0_24px_60px_rgba(0,0,0,0.34)] backdrop-blur-xl",
-                  isMobile ? "w-full max-w-[20rem] rounded-[18px] px-3 py-3" : "w-[min(25rem,100%)] xl:mr-2",
-                )}
+                data-testid="world-event-marker"
+                data-city-slug={event.citySlug}
+                data-target-city-slug={event.targetCitySlug ?? ""}
+                data-event-kind={event.kind}
+                data-event-screen-x={Math.round(eventScreenPoint.x)}
+                data-event-screen-y={Math.round(eventScreenPoint.y)}
+                className="pointer-events-none absolute z-[44]"
                 style={{
-                  borderColor: `${activeWorldEvent.accent}55`,
-                  boxShadow: `0 0 0 1px ${activeWorldEvent.accent}22`,
+                  left: clamp(eventScreenPoint.x - 56, 12, containerSize.width - 112),
+                  top: clamp(eventScreenPoint.y - 32, 12, containerSize.height - 126),
                 }}
               >
-                <div className="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.24em]">
-                  <span style={{ color: activeWorldEvent.accent }}>World Event</span>
-                  <span className="rounded-full border border-white/10 px-2 py-1 text-[var(--muted)]">
-                    {activeWorldEvent.badge}
-                  </span>
-                  <span className="rounded-full border border-white/10 px-2 py-1 text-[var(--muted)]">
-                    {activeWorldEvent.cityTitle}
-                  </span>
+                <div className="flex flex-col items-center gap-2">
+                  <div
+                    className="world-event-beacon rounded-[8px] border-2 shadow-[0_10px_22px_rgba(0,0,0,0.24)]"
+                    style={{
+                      borderColor: event.accent,
+                      background: "rgba(16,11,9,0.88)",
+                      boxShadow: `0 0 0 8px ${event.accent}2a, 0 0 34px ${event.accent}50`,
+                    }}
+                  >
+                    <WorldEventEffect event={event} />
+                  </div>
+                  <div
+                    className="world-event-pulse rounded-full border px-3 py-1 text-[10px] uppercase tracking-[0.24em] text-[var(--parchment)] shadow-[0_12px_32px_rgba(0,0,0,0.28)]"
+                    style={{
+                      borderColor: `${event.accent}aa`,
+                      background: "rgba(14,10,8,0.92)",
+                      boxShadow: `0 0 0 1px ${event.accent}55, 0 0 26px ${event.accent}3a`,
+                    }}
+                  >
+                    {event.markerLabel}
+                  </div>
                 </div>
-                <div className={cn("mt-3 font-display leading-none text-[var(--parchment)]", isMobile ? "text-[1.35rem]" : "text-[1.9rem]")}>
-                  {activeWorldEvent.title}
-                </div>
-                <p className={cn("mt-3 text-sm leading-6 text-[var(--muted-soft)]", isMobile ? "line-clamp-2 text-[12px] leading-5" : null)}>
-                  {activeWorldEvent.detail}
-                </p>
               </div>
-            </div>
-          </>
-        ) : null}
+            </Fragment>
+          );
+        })}
 
         {showMobileTimeline ? (
           <div
@@ -1579,49 +1887,90 @@ export function WorldExplorer({
               </div>
             </div>
           ) : null}
-          <div
-            data-map-interactive="true"
-            className="rounded-[24px] border border-[rgba(244,211,141,0.14)] bg-[rgba(14,10,8,0.72)] p-3 shadow-[0_20px_45px_rgba(0,0,0,0.28)] backdrop-blur-xl"
-          >
-            <div className="mb-2 text-[10px] uppercase tracking-[0.24em] text-[var(--muted)]">Minimap</div>
-            <svg
+          <div className="flex items-end gap-3">
+            {activeWorldEvents.length > 0 ? (
+              <div
+                data-map-interactive="true"
+                data-testid="world-event-notifications"
+                className="pointer-events-none flex w-[220px] flex-col gap-2"
+              >
+                {activeWorldEvents.slice(0, 3).map((event) => (
+                  <div
+                    key={event.id}
+                    data-testid="world-event-card"
+                    data-city-slug={event.citySlug}
+                    data-target-city-slug={event.targetCitySlug ?? ""}
+                    data-event-kind={event.kind}
+                    className="world-event-card panel-enter rounded-[14px] border bg-[rgba(16,11,9,0.86)] px-3 py-2.5 text-[var(--muted-soft)] shadow-[0_16px_36px_rgba(0,0,0,0.28)] backdrop-blur-xl"
+                    style={{
+                      borderColor: `${event.accent}4f`,
+                      boxShadow: `0 0 0 1px ${event.accent}2e, 0 14px 34px rgba(0,0,0,0.34), 0 0 24px ${event.accent}1c`,
+                    }}
+                  >
+                    <div className="flex items-center gap-2 text-[8px] uppercase tracking-[0.18em]">
+                      <span
+                        className="rounded-full border px-1.5 py-0.5"
+                        style={{ color: event.accent, borderColor: `${event.accent}66`, background: `${event.accent}16` }}
+                      >
+                        Event
+                      </span>
+                      <span className="truncate text-[var(--muted)]">{event.badge}</span>
+                      <span className="truncate text-[var(--muted)]">{event.cityTitle}</span>
+                    </div>
+                    <div className="mt-2 line-clamp-1 font-display text-[1.1rem] leading-none text-[var(--parchment)]">
+                      {event.title}
+                    </div>
+                    <p className="mt-1.5 line-clamp-2 text-[11px] leading-4 text-[var(--muted-soft)]">
+                      {event.detail}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            <div
               data-map-interactive="true"
-              width="220"
-              height="148"
-              viewBox={`0 0 ${world.width} ${world.height}`}
-              onClick={(event) => {
-                stopIntro();
-                const rect = event.currentTarget.getBoundingClientRect();
-                const x = ((event.clientX - rect.left) / rect.width) * world.width;
-                const y = ((event.clientY - rect.top) / rect.height) * world.height;
-                nudgeTowardsPoint(x, y);
-              }}
-              className="cursor-pointer"
+              className="rounded-[24px] border border-[rgba(244,211,141,0.14)] bg-[rgba(14,10,8,0.72)] p-3 shadow-[0_20px_45px_rgba(0,0,0,0.28)] backdrop-blur-xl"
             >
-              <rect width={world.width} height={world.height} rx={14} fill="#0b121b" />
-              {minimapRoutes.map((route) => (
-                <path key={route.id} d={route.path} fill="none" stroke="rgba(212,176,106,0.18)" strokeWidth={6} />
-              ))}
-              {mapState.cities.map((city) => (
-                <circle
-                  key={city.slug}
-                  cx={city.x}
-                  cy={city.y}
-                  r={city.slug === selectedSlug ? 22 : city.level === "wonder" ? 16 : 12}
-                  fill={disciplineTone[city.discipline]}
-                  fillOpacity={city.slug === selectedSlug ? 1 : 0.82}
+              <div className="mb-2 text-[10px] uppercase tracking-[0.24em] text-[var(--muted)]">Minimap</div>
+              <svg
+                data-map-interactive="true"
+                width="220"
+                height="148"
+                viewBox={`0 0 ${world.width} ${world.height}`}
+                onClick={(event) => {
+                  stopIntro();
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  const x = ((event.clientX - rect.left) / rect.width) * world.width;
+                  const y = ((event.clientY - rect.top) / rect.height) * world.height;
+                  nudgeTowardsPoint(x, y);
+                }}
+                className="cursor-pointer"
+              >
+                <rect width={world.width} height={world.height} rx={14} fill="#0b121b" />
+                {minimapRoutes.map((route) => (
+                  <path key={route.id} d={route.path} fill="none" stroke="rgba(212,176,106,0.18)" strokeWidth={6} />
+                ))}
+                {mapState.cities.map((city) => (
+                  <circle
+                    key={city.slug}
+                    cx={city.x}
+                    cy={city.y}
+                    r={city.slug === selectedSlug ? 22 : city.level === "wonder" ? 16 : 12}
+                    fill={disciplineTone[city.discipline]}
+                    fillOpacity={city.slug === selectedSlug ? 1 : 0.82}
+                  />
+                ))}
+                <rect
+                  x={clamp(-camera.x / camera.zoom, 0, world.width)}
+                  y={clamp(-camera.y / camera.zoom, 0, world.height)}
+                  width={clamp(containerSize.width / camera.zoom, 120, world.width)}
+                  height={clamp(containerSize.height / camera.zoom, 120, world.height)}
+                  fill="none"
+                  stroke="#f4d38d"
+                  strokeWidth={10}
                 />
-              ))}
-              <rect
-                x={clamp(-camera.x / camera.zoom, 0, world.width)}
-                y={clamp(-camera.y / camera.zoom, 0, world.height)}
-                width={clamp(containerSize.width / camera.zoom, 120, world.width)}
-                height={clamp(containerSize.height / camera.zoom, 120, world.height)}
-                fill="none"
-                stroke="#f4d38d"
-                strokeWidth={10}
-              />
-            </svg>
+              </svg>
+            </div>
           </div>
         </div>
 

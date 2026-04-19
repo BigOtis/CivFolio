@@ -453,13 +453,14 @@ export function useWorldAudio(audioConfig: SiteConfig["audio"]) {
     })();
   }, [ensureAudioContext, status]);
 
-  const playWorldEventCue = useCallback((kind: "storm" | "battle" | "greatLeader" | "invention") => {
-    if (typeof window === "undefined" || (!hasUserInteractedRef.current && status !== "on")) {
+  const playWorldEventCue = useCallback((kind: "storm" | "battle" | "greatLeader" | "invention" | "festival" | "trade" | "discovery" | "sabotage") => {
+    if (typeof window === "undefined") {
       return;
     }
 
     void (async () => {
       try {
+        markUserInteracted();
         const context = await ensureAudioContext();
         if (!context) {
           return;
@@ -468,10 +469,34 @@ export function useWorldAudio(audioConfig: SiteConfig["audio"]) {
         const now = context.currentTime;
         const master = context.createGain();
         master.gain.setValueAtTime(
-          kind === "storm" ? 0.05 : kind === "battle" ? 0.058 : kind === "greatLeader" ? 0.052 : 0.046,
+          kind === "storm"
+            ? 0.16
+            : kind === "battle"
+              ? 0.18
+              : kind === "sabotage"
+                ? 0.17
+                : kind === "greatLeader" || kind === "festival"
+                  ? 0.16
+                  : 0.15,
           now,
         );
         master.connect(context.destination);
+
+        const alertTimes = kind === "battle" ? [0, 0.12, 0.24] : [0, 0.16];
+        alertTimes.forEach((offset, index) => {
+          const alert = context.createOscillator();
+          const alertGain = context.createGain();
+          alert.type = kind === "storm" ? "triangle" : "sawtooth";
+          alert.frequency.setValueAtTime(kind === "greatLeader" ? 392 + index * 98 : kind === "invention" ? 523 + index * 131 : 220 + index * 74, now + offset);
+          alert.frequency.exponentialRampToValueAtTime(kind === "greatLeader" ? 587 + index * 132 : kind === "invention" ? 784 + index * 165 : 164 + index * 54, now + offset + 0.16);
+          alertGain.gain.setValueAtTime(0.0001, now + offset);
+          alertGain.gain.exponentialRampToValueAtTime(0.18, now + offset + 0.02);
+          alertGain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.18);
+          alert.connect(alertGain);
+          alertGain.connect(master);
+          alert.start(now + offset);
+          alert.stop(now + offset + 0.2);
+        });
 
         if (kind === "storm") {
           const buffer = context.createBuffer(1, Math.floor(context.sampleRate * 0.9), context.sampleRate);
@@ -509,6 +534,26 @@ export function useWorldAudio(audioConfig: SiteConfig["audio"]) {
           thunderGain.connect(master);
           thunder.start(now + 0.04);
           thunder.stop(now + 0.58);
+
+          const crackBuffer = context.createBuffer(1, Math.floor(context.sampleRate * 0.08), context.sampleRate);
+          const crackData = crackBuffer.getChannelData(0);
+          for (let index = 0; index < crackData.length; index += 1) {
+            crackData[index] = (Math.random() * 2 - 1) * (1 - index / crackData.length);
+          }
+          const crack = context.createBufferSource();
+          const crackFilter = context.createBiquadFilter();
+          const crackGain = context.createGain();
+          crack.buffer = crackBuffer;
+          crackFilter.type = "highpass";
+          crackFilter.frequency.setValueAtTime(1800, now + 0.18);
+          crackGain.gain.setValueAtTime(0.0001, now + 0.18);
+          crackGain.gain.exponentialRampToValueAtTime(0.17, now + 0.195);
+          crackGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.25);
+          crack.connect(crackFilter);
+          crackFilter.connect(crackGain);
+          crackGain.connect(master);
+          crack.start(now + 0.18);
+          crack.stop(now + 0.27);
 
           return;
         }
@@ -563,6 +608,19 @@ export function useWorldAudio(audioConfig: SiteConfig["audio"]) {
           snare.start(now + 0.16);
           snare.stop(now + 0.26);
 
+          const clang = context.createOscillator();
+          const clangGain = context.createGain();
+          clang.type = "triangle";
+          clang.frequency.setValueAtTime(1180, now + 0.08);
+          clang.frequency.exponentialRampToValueAtTime(620, now + 0.34);
+          clangGain.gain.setValueAtTime(0.0001, now + 0.07);
+          clangGain.gain.exponentialRampToValueAtTime(0.16, now + 0.1);
+          clangGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.38);
+          clang.connect(clangGain);
+          clangGain.connect(master);
+          clang.start(now + 0.07);
+          clang.stop(now + 0.4);
+
           return;
         }
 
@@ -608,6 +666,157 @@ export function useWorldAudio(audioConfig: SiteConfig["audio"]) {
             bell.stop(now + offset + 0.2);
           });
 
+          [0, 0.14, 0.28].forEach((offset, index) => {
+            const fanfare = context.createOscillator();
+            const fanfareGain = context.createGain();
+            fanfare.type = "sawtooth";
+            fanfare.frequency.setValueAtTime([262, 330, 392][index] ?? 392, now + offset);
+            fanfare.frequency.exponentialRampToValueAtTime([330, 392, 523][index] ?? 523, now + offset + 0.16);
+            fanfareGain.gain.setValueAtTime(0.0001, now + offset);
+            fanfareGain.gain.exponentialRampToValueAtTime(0.11, now + offset + 0.025);
+            fanfareGain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.18);
+            fanfare.connect(fanfareGain);
+            fanfareGain.connect(master);
+            fanfare.start(now + offset);
+            fanfare.stop(now + offset + 0.2);
+          });
+
+          return;
+        }
+
+        if (kind === "festival") {
+          [0, 0.1, 0.2, 0.32].forEach((offset, index) => {
+            const bell = context.createOscillator();
+            const bellGain = context.createGain();
+            bell.type = "sine";
+            bell.frequency.setValueAtTime([523, 659, 784, 1046][index] ?? 1046, now + offset);
+            bell.frequency.exponentialRampToValueAtTime([659, 784, 1046, 1318][index] ?? 1318, now + offset + 0.14);
+            bellGain.gain.setValueAtTime(0.0001, now + offset);
+            bellGain.gain.exponentialRampToValueAtTime(0.12, now + offset + 0.018);
+            bellGain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.17);
+            bell.connect(bellGain);
+            bellGain.connect(master);
+            bell.start(now + offset);
+            bell.stop(now + offset + 0.18);
+          });
+
+          const drum = context.createOscillator();
+          const drumGain = context.createGain();
+          drum.type = "triangle";
+          drum.frequency.setValueAtTime(132, now + 0.02);
+          drum.frequency.exponentialRampToValueAtTime(92, now + 0.34);
+          drumGain.gain.setValueAtTime(0.0001, now + 0.02);
+          drumGain.gain.exponentialRampToValueAtTime(0.13, now + 0.05);
+          drumGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.38);
+          drum.connect(drumGain);
+          drumGain.connect(master);
+          drum.start(now + 0.02);
+          drum.stop(now + 0.4);
+
+          return;
+        }
+
+        if (kind === "trade") {
+          [0, 0.13, 0.26].forEach((offset, index) => {
+            const hoof = context.createOscillator();
+            const hoofGain = context.createGain();
+            hoof.type = "square";
+            hoof.frequency.setValueAtTime(156 - index * 12, now + offset);
+            hoof.frequency.exponentialRampToValueAtTime(96, now + offset + 0.08);
+            hoofGain.gain.setValueAtTime(0.0001, now + offset);
+            hoofGain.gain.exponentialRampToValueAtTime(0.11, now + offset + 0.012);
+            hoofGain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.09);
+            hoof.connect(hoofGain);
+            hoofGain.connect(master);
+            hoof.start(now + offset);
+            hoof.stop(now + offset + 0.1);
+          });
+
+          [0.08, 0.2].forEach((offset, index) => {
+            const coin = context.createOscillator();
+            const coinGain = context.createGain();
+            coin.type = "triangle";
+            coin.frequency.setValueAtTime(880 + index * 220, now + offset);
+            coin.frequency.exponentialRampToValueAtTime(1320 + index * 180, now + offset + 0.16);
+            coinGain.gain.setValueAtTime(0.0001, now + offset);
+            coinGain.gain.exponentialRampToValueAtTime(0.08, now + offset + 0.012);
+            coinGain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.18);
+            coin.connect(coinGain);
+            coinGain.connect(master);
+            coin.start(now + offset);
+            coin.stop(now + offset + 0.2);
+          });
+
+          return;
+        }
+
+        if (kind === "discovery") {
+          const sweep = context.createOscillator();
+          const sweepGain = context.createGain();
+          sweep.type = "sine";
+          sweep.frequency.setValueAtTime(294, now);
+          sweep.frequency.exponentialRampToValueAtTime(1174, now + 0.58);
+          sweepGain.gain.setValueAtTime(0.0001, now);
+          sweepGain.gain.exponentialRampToValueAtTime(0.16, now + 0.04);
+          sweepGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.62);
+          sweep.connect(sweepGain);
+          sweepGain.connect(master);
+          sweep.start(now);
+          sweep.stop(now + 0.64);
+
+          [0.18, 0.3, 0.42].forEach((offset, index) => {
+            const sparkle = context.createOscillator();
+            const sparkleGain = context.createGain();
+            sparkle.type = "triangle";
+            sparkle.frequency.setValueAtTime(740 + index * 147, now + offset);
+            sparkle.frequency.exponentialRampToValueAtTime(988 + index * 196, now + offset + 0.12);
+            sparkleGain.gain.setValueAtTime(0.0001, now + offset);
+            sparkleGain.gain.exponentialRampToValueAtTime(0.08, now + offset + 0.015);
+            sparkleGain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.14);
+            sparkle.connect(sparkleGain);
+            sparkleGain.connect(master);
+            sparkle.start(now + offset);
+            sparkle.stop(now + offset + 0.16);
+          });
+
+          return;
+        }
+
+        if (kind === "sabotage") {
+          const buffer = context.createBuffer(1, Math.floor(context.sampleRate * 0.22), context.sampleRate);
+          const data = buffer.getChannelData(0);
+          for (let index = 0; index < data.length; index += 1) {
+            data[index] = (Math.random() * 2 - 1) * (1 - index / data.length);
+          }
+
+          const hiss = context.createBufferSource();
+          const hissFilter = context.createBiquadFilter();
+          const hissGain = context.createGain();
+          hiss.buffer = buffer;
+          hissFilter.type = "highpass";
+          hissFilter.frequency.setValueAtTime(1600, now);
+          hissGain.gain.setValueAtTime(0.0001, now);
+          hissGain.gain.exponentialRampToValueAtTime(0.16, now + 0.03);
+          hissGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.2);
+          hiss.connect(hissFilter);
+          hissFilter.connect(hissGain);
+          hissGain.connect(master);
+          hiss.start(now);
+          hiss.stop(now + 0.22);
+
+          const thump = context.createOscillator();
+          const thumpGain = context.createGain();
+          thump.type = "sawtooth";
+          thump.frequency.setValueAtTime(118, now + 0.14);
+          thump.frequency.exponentialRampToValueAtTime(46, now + 0.42);
+          thumpGain.gain.setValueAtTime(0.0001, now + 0.12);
+          thumpGain.gain.exponentialRampToValueAtTime(0.22, now + 0.16);
+          thumpGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.48);
+          thump.connect(thumpGain);
+          thumpGain.connect(master);
+          thump.start(now + 0.12);
+          thump.stop(now + 0.5);
+
           return;
         }
 
@@ -623,6 +832,19 @@ export function useWorldAudio(audioConfig: SiteConfig["audio"]) {
         bedGain.connect(master);
         bed.start(now);
         bed.stop(now + 0.3);
+
+        const sweep = context.createOscillator();
+        const sweepGain = context.createGain();
+        sweep.type = "sawtooth";
+        sweep.frequency.setValueAtTime(176, now);
+        sweep.frequency.exponentialRampToValueAtTime(880, now + 0.52);
+        sweepGain.gain.setValueAtTime(0.0001, now);
+        sweepGain.gain.exponentialRampToValueAtTime(0.1, now + 0.05);
+        sweepGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.56);
+        sweep.connect(sweepGain);
+        sweepGain.connect(master);
+        sweep.start(now);
+        sweep.stop(now + 0.58);
 
         [0, 0.09, 0.18].forEach((offset, index) => {
           const sparkle = context.createOscillator();
@@ -642,7 +864,7 @@ export function useWorldAudio(audioConfig: SiteConfig["audio"]) {
         // Ignore audio errors on unsupported browsers.
       }
     })();
-  }, [ensureAudioContext, status]);
+  }, [ensureAudioContext, markUserInteracted]);
 
   return useMemo(
     () => ({ status, stopMusic, toggleMusic, playUiClick, playIntroCue, playIntroTransition, playWorldEventCue }),

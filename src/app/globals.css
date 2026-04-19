@@ -115,6 +115,470 @@ summary {
   animation: panelEnter 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+.world-event-card {
+  animation:
+    panelEnter 260ms cubic-bezier(0.22, 1, 0.36, 1) both,
+    eventCardPulse 1.8s ease-in-out 3;
+}
+
+.world-event-pulse {
+  animation: eventLabelPulse 1.35s ease-in-out infinite;
+}
+
+.world-event-beacon {
+  position: relative;
+  display: grid;
+  width: 54px;
+  height: 54px;
+  place-items: center;
+  animation: eventBeaconPulse 1.35s ease-out infinite;
+}
+
+.world-event-effect {
+  position: relative;
+  width: 46px;
+  height: 46px;
+}
+
+.world-event-effect span {
+  position: absolute;
+  display: block;
+}
+
+.world-event-effect-storm {
+  animation: stormShake 1.1s ease-in-out infinite;
+}
+
+.storm-cloud {
+  height: 14px;
+  border: 1px solid rgba(198, 216, 224, 0.7);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(198, 216, 224, 0.95), rgba(79, 102, 111, 0.86));
+  box-shadow: 0 6px 18px rgba(124, 171, 190, 0.24);
+}
+
+.storm-cloud-left {
+  top: 9px;
+  left: 6px;
+  width: 27px;
+}
+
+.storm-cloud-right {
+  top: 14px;
+  right: 5px;
+  width: 30px;
+}
+
+.storm-lightning {
+  top: 23px;
+  left: 20px;
+  width: 13px;
+  height: 20px;
+  clip-path: polygon(45% 0, 100% 0, 62% 43%, 100% 43%, 20% 100%, 43% 55%, 0 55%);
+  background: #f7df7a;
+  filter: drop-shadow(0 0 8px rgba(247, 223, 122, 0.8));
+  animation: lightningFlash 1.1s steps(2, end) infinite;
+}
+
+.storm-rain {
+  top: 31px;
+  width: 2px;
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(154, 213, 246, 0.78);
+  transform: rotate(18deg);
+  animation: rainFall 0.72s linear infinite;
+}
+
+.storm-rain-left {
+  left: 13px;
+}
+
+.storm-rain-right {
+  right: 12px;
+  animation-delay: 0.18s;
+}
+
+.world-event-effect-battle {
+  animation: battleJolt 0.84s ease-in-out infinite;
+}
+
+.battle-blast {
+  inset: 11px;
+  border: 1px solid rgba(245, 191, 116, 0.62);
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(245, 191, 116, 0.52), rgba(181, 84, 54, 0.1) 68%, transparent 70%);
+  animation: blastPulse 0.84s ease-out infinite;
+}
+
+.battle-sword {
+  top: 7px;
+  left: 21px;
+  width: 4px;
+  height: 34px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #e8edf0, #746654 72%, #3a251c);
+  transform-origin: 50% 70%;
+  box-shadow: 0 0 8px rgba(245, 191, 116, 0.28);
+}
+
+.battle-sword::after {
+  position: absolute;
+  top: 21px;
+  left: -7px;
+  width: 18px;
+  height: 3px;
+  border-radius: 999px;
+  background: #d59750;
+  content: "";
+}
+
+.battle-sword-left {
+  transform: rotate(-44deg);
+}
+
+.battle-sword-right {
+  transform: rotate(44deg);
+}
+
+.battle-spark {
+  width: 7px;
+  height: 7px;
+  clip-path: polygon(50% 0, 64% 36%, 100% 50%, 64% 64%, 50% 100%, 36% 64%, 0 50%, 36% 36%);
+  background: #f4d38d;
+  filter: drop-shadow(0 0 6px rgba(244, 211, 141, 0.85));
+  animation: sparkPop 0.84s ease-out infinite;
+}
+
+.battle-spark-top {
+  top: 5px;
+  right: 9px;
+}
+
+.battle-spark-bottom {
+  bottom: 4px;
+  left: 8px;
+  animation-delay: 0.22s;
+}
+
+.world-event-effect-leader {
+  animation: leaderStandardWave 1.6s ease-in-out infinite;
+}
+
+.leader-standard {
+  top: 7px;
+  left: 13px;
+  width: 3px;
+  height: 35px;
+  border-radius: 999px;
+  background: #f4d38d;
+}
+
+.leader-banner {
+  top: 8px;
+  left: 16px;
+  width: 24px;
+  height: 18px;
+  border: 1px solid rgba(244, 211, 141, 0.68);
+  border-radius: 4px 8px 8px 4px;
+  background: linear-gradient(135deg, rgba(244, 211, 141, 0.9), rgba(149, 218, 183, 0.56));
+  clip-path: polygon(0 0, 100% 0, 82% 50%, 100% 100%, 0 100%);
+  transform-origin: left center;
+  animation: bannerWave 1.2s ease-in-out infinite;
+}
+
+.leader-crown {
+  top: 24px;
+  left: 19px;
+  width: 12px;
+  height: 12px;
+  background: #f4d38d;
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+  filter: drop-shadow(0 0 10px rgba(244, 211, 141, 0.8));
+}
+
+.leader-rays {
+  inset: 4px;
+  border-radius: 999px;
+  background: conic-gradient(from 0deg, transparent, rgba(244, 211, 141, 0.22), transparent 18%, transparent 28%);
+  animation: raySpin 3.8s linear infinite;
+}
+
+.world-event-effect-invention {
+  animation: inventionFloat 1.45s ease-in-out infinite;
+}
+
+.invention-core {
+  top: 15px;
+  left: 15px;
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(149, 218, 183, 0.92);
+  border-radius: 6px;
+  background: rgba(149, 218, 183, 0.22);
+  box-shadow: 0 0 14px rgba(149, 218, 183, 0.58);
+  transform: rotate(45deg);
+}
+
+.invention-ring {
+  inset: 8px;
+  border: 1px solid rgba(154, 213, 246, 0.58);
+  border-radius: 999px;
+}
+
+.invention-ring-one {
+  transform: rotate(18deg) scaleX(1.18);
+  animation: orbitOne 1.8s linear infinite;
+}
+
+.invention-ring-two {
+  transform: rotate(-58deg) scaleX(1.08);
+  animation: orbitTwo 2.2s linear infinite;
+}
+
+.invention-spark {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #95dab7;
+  box-shadow: 0 0 8px rgba(149, 218, 183, 0.84);
+}
+
+.invention-spark-one {
+  top: 4px;
+  left: 21px;
+}
+
+.invention-spark-two {
+  right: 5px;
+  bottom: 14px;
+  animation-delay: 0.18s;
+}
+
+.invention-spark-three {
+  bottom: 5px;
+  left: 9px;
+  animation-delay: 0.36s;
+}
+
+.invention-spark {
+  animation: sparkPop 1.1s ease-in-out infinite;
+}
+
+.world-event-effect-festival {
+  animation: festivalBounce 1.2s ease-in-out infinite;
+}
+
+.festival-stage {
+  left: 8px;
+  bottom: 8px;
+  width: 30px;
+  height: 8px;
+  border: 1px solid rgba(230, 170, 114, 0.68);
+  border-radius: 8px 8px 4px 4px;
+  background: linear-gradient(180deg, rgba(230, 170, 114, 0.72), rgba(89, 48, 35, 0.82));
+}
+
+.festival-lantern {
+  top: 12px;
+  width: 9px;
+  height: 15px;
+  border: 1px solid rgba(244, 211, 141, 0.75);
+  border-radius: 999px 999px 8px 8px;
+  background: radial-gradient(circle at 50% 35%, rgba(244, 211, 141, 0.98), rgba(230, 170, 114, 0.42) 64%, transparent 68%);
+  filter: drop-shadow(0 0 9px rgba(230, 170, 114, 0.7));
+  animation: lanternSway 1.25s ease-in-out infinite;
+}
+
+.festival-lantern-left {
+  left: 10px;
+}
+
+.festival-lantern-right {
+  right: 10px;
+  animation-delay: 0.18s;
+}
+
+.festival-burst {
+  width: 8px;
+  height: 8px;
+  clip-path: polygon(50% 0, 60% 36%, 100% 50%, 60% 64%, 50% 100%, 40% 64%, 0 50%, 40% 36%);
+  background: #f4d38d;
+  filter: drop-shadow(0 0 8px rgba(244, 211, 141, 0.82));
+  animation: sparkPop 0.92s ease-in-out infinite;
+}
+
+.festival-burst-top {
+  top: 5px;
+  left: 19px;
+}
+
+.festival-burst-bottom {
+  right: 6px;
+  bottom: 9px;
+  animation-delay: 0.24s;
+}
+
+.world-event-effect-trade {
+  animation: tradeRoll 1.15s ease-in-out infinite;
+}
+
+.trade-cart {
+  left: 8px;
+  top: 19px;
+  width: 29px;
+  height: 14px;
+  border: 1px solid rgba(210, 199, 126, 0.72);
+  border-radius: 5px 7px 6px 6px;
+  background: linear-gradient(180deg, rgba(210, 199, 126, 0.86), rgba(77, 72, 43, 0.82));
+}
+
+.trade-crate {
+  left: 15px;
+  top: 12px;
+  width: 13px;
+  height: 13px;
+  border: 1px solid rgba(244, 211, 141, 0.62);
+  border-radius: 3px;
+  background: rgba(213, 151, 80, 0.72);
+}
+
+.trade-wheel {
+  bottom: 9px;
+  width: 8px;
+  height: 8px;
+  border: 2px solid rgba(244, 211, 141, 0.76);
+  border-radius: 999px;
+  animation: wheelSpin 0.72s linear infinite;
+}
+
+.trade-wheel-left {
+  left: 12px;
+}
+
+.trade-wheel-right {
+  right: 11px;
+}
+
+.trade-arrow {
+  top: 8px;
+  right: 6px;
+  width: 17px;
+  height: 7px;
+  border-top: 2px solid rgba(210, 199, 126, 0.86);
+  border-right: 2px solid rgba(210, 199, 126, 0.86);
+  transform: rotate(34deg);
+  animation: arrowMarch 1s ease-in-out infinite;
+}
+
+.world-event-effect-discovery {
+  animation: discoveryTilt 1.35s ease-in-out infinite;
+}
+
+.discovery-lens {
+  top: 10px;
+  left: 10px;
+  width: 22px;
+  height: 22px;
+  border: 3px solid rgba(128, 202, 220, 0.92);
+  border-radius: 999px;
+  background: radial-gradient(circle at 35% 35%, rgba(255,255,255,0.72), rgba(128, 202, 220, 0.18) 54%, transparent 58%);
+  box-shadow: 0 0 14px rgba(128, 202, 220, 0.5);
+}
+
+.discovery-handle {
+  right: 9px;
+  bottom: 10px;
+  width: 4px;
+  height: 18px;
+  border-radius: 999px;
+  background: #80cadc;
+  transform: rotate(-45deg);
+  transform-origin: top center;
+}
+
+.discovery-star {
+  width: 7px;
+  height: 7px;
+  clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%);
+  background: #f4d38d;
+  animation: sparkPop 1.08s ease-in-out infinite;
+}
+
+.discovery-star-one {
+  top: 5px;
+  right: 8px;
+}
+
+.discovery-star-two {
+  left: 5px;
+  bottom: 9px;
+  animation-delay: 0.22s;
+}
+
+.discovery-sweep {
+  inset: 4px;
+  border-radius: 999px;
+  background: conic-gradient(from 0deg, transparent, rgba(128, 202, 220, 0.22), transparent 19%, transparent 100%);
+  animation: raySpin 2.6s linear infinite;
+}
+
+.world-event-effect-sabotage {
+  animation: sabotageTwitch 0.78s ease-in-out infinite;
+}
+
+.sabotage-bomb {
+  left: 13px;
+  bottom: 8px;
+  width: 21px;
+  height: 21px;
+  border: 1px solid rgba(199, 123, 102, 0.72);
+  border-radius: 999px 999px 999px 7px;
+  background: radial-gradient(circle at 35% 35%, rgba(244, 211, 141, 0.26), rgba(42, 31, 27, 0.95) 62%);
+  transform: rotate(-12deg);
+}
+
+.sabotage-fuse {
+  top: 9px;
+  left: 28px;
+  width: 16px;
+  height: 13px;
+  border-top: 2px dashed rgba(244, 211, 141, 0.78);
+  border-radius: 999px;
+  transform: rotate(-24deg);
+}
+
+.sabotage-spark {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #f4d38d;
+  filter: drop-shadow(0 0 8px rgba(244, 211, 141, 0.86));
+  animation: sparkPop 0.62s ease-out infinite;
+}
+
+.sabotage-spark-one {
+  top: 6px;
+  right: 4px;
+}
+
+.sabotage-spark-two {
+  top: 13px;
+  right: 12px;
+  animation-delay: 0.16s;
+}
+
+.sabotage-smoke {
+  top: 5px;
+  left: 8px;
+  width: 16px;
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(134, 162, 163, 0.34);
+  filter: blur(1px);
+  animation: smokeLift 1.2s ease-out infinite;
+}
+
 @keyframes roadFlow {
   from {
     stroke-dashoffset: 0;
@@ -197,6 +661,242 @@ summary {
   }
 }
 
+@keyframes eventCardPulse {
+  0%,
+  100% {
+    filter: saturate(1);
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    filter: saturate(1.18);
+    transform: translateY(-2px) scale(1.012);
+  }
+}
+
+@keyframes eventLabelPulse {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+}
+
+@keyframes eventBeaconPulse {
+  0% {
+    transform: scale(0.88);
+  }
+  55% {
+    transform: scale(1.1);
+  }
+  100% {
+    transform: scale(0.88);
+  }
+}
+
+@keyframes stormShake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(-1px);
+  }
+}
+
+@keyframes lightningFlash {
+  0%,
+  65%,
+  100% {
+    opacity: 0.25;
+  }
+  70%,
+  78% {
+    opacity: 1;
+  }
+}
+
+@keyframes rainFall {
+  0% {
+    opacity: 0;
+    transform: translateY(-3px) rotate(18deg);
+  }
+  35% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(8px) rotate(18deg);
+  }
+}
+
+@keyframes battleJolt {
+  0%,
+  100% {
+    transform: rotate(0deg) scale(1);
+  }
+  35% {
+    transform: rotate(-4deg) scale(1.05);
+  }
+  70% {
+    transform: rotate(3deg) scale(0.98);
+  }
+}
+
+@keyframes blastPulse {
+  0% {
+    opacity: 0.9;
+    transform: scale(0.72);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.45);
+  }
+}
+
+@keyframes sparkPop {
+  0%,
+  100% {
+    opacity: 0.3;
+    transform: scale(0.7);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.18);
+  }
+}
+
+@keyframes leaderStandardWave {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+}
+
+@keyframes bannerWave {
+  0%,
+  100% {
+    transform: skewY(0deg);
+  }
+  50% {
+    transform: skewY(-7deg);
+  }
+}
+
+@keyframes raySpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes inventionFloat {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+}
+
+@keyframes orbitOne {
+  to {
+    transform: rotate(378deg) scaleX(1.18);
+  }
+}
+
+@keyframes orbitTwo {
+  to {
+    transform: rotate(302deg) scaleX(1.08);
+  }
+}
+
+@keyframes festivalBounce {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    transform: translateY(-2px) scale(1.04);
+  }
+}
+
+@keyframes lanternSway {
+  0%,
+  100% {
+    transform: rotate(-4deg);
+  }
+  50% {
+    transform: rotate(5deg);
+  }
+}
+
+@keyframes tradeRoll {
+  0%,
+  100% {
+    transform: translateX(-1px);
+  }
+  50% {
+    transform: translateX(2px);
+  }
+}
+
+@keyframes wheelSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes arrowMarch {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: translateX(-2px) rotate(34deg);
+  }
+  50% {
+    opacity: 1;
+    transform: translateX(2px) rotate(34deg);
+  }
+}
+
+@keyframes discoveryTilt {
+  0%,
+  100% {
+    transform: rotate(-2deg);
+  }
+  50% {
+    transform: rotate(4deg);
+  }
+}
+
+@keyframes sabotageTwitch {
+  0%,
+  100% {
+    transform: translateX(0) rotate(0deg);
+  }
+  25% {
+    transform: translateX(-1px) rotate(-3deg);
+  }
+  60% {
+    transform: translateX(1px) rotate(2deg);
+  }
+}
+
+@keyframes smokeLift {
+  0% {
+    opacity: 0.72;
+    transform: translateY(6px) scale(0.72);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-10px) scale(1.24);
+  }
+}
+
 @keyframes driftGlow {
   0% {
     transform: translate3d(-1.5%, 0, 0) scale(1);
@@ -225,7 +925,28 @@ summary {
   .unit-float,
   .hud-drift,
   .city-banner,
-  .panel-enter {
+  .panel-enter,
+  .world-event-card,
+  .world-event-pulse,
+  .world-event-beacon,
+  .world-event-effect,
+  .world-event-effect span,
+  .storm-lightning,
+  .storm-rain,
+  .battle-blast,
+  .battle-spark,
+  .leader-banner,
+  .leader-rays,
+  .invention-ring,
+  .invention-spark,
+  .festival-lantern,
+  .festival-burst,
+  .trade-wheel,
+  .trade-arrow,
+  .discovery-star,
+  .discovery-sweep,
+  .sabotage-spark,
+  .sabotage-smoke {
     animation: none !important;
   }
 }

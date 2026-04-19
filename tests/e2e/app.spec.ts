@@ -27,6 +27,17 @@ const CITY_SLUGS = [
   "slopswapper",
 ] as const;
 
+const WORLD_EVENT_KINDS = [
+  "storm",
+  "battle",
+  "greatLeader",
+  "invention",
+  "festival",
+  "trade",
+  "discovery",
+  "sabotage",
+] as const;
+
 async function openWorldMap(
   page: Page,
   options?: {
@@ -38,6 +49,7 @@ async function openWorldMap(
     worldEventMinMs?: number;
     worldEventMaxMs?: number;
     worldEventDurationMs?: number;
+    worldEventKind?: (typeof WORLD_EVENT_KINDS)[number];
   },
 ) {
   if (options?.fastIntro || options?.introStepMs || options?.introFinalMs) {
@@ -80,6 +92,11 @@ async function openWorldMap(
       },
       { min: minMs, max: maxMs, duration: durationMs },
     );
+  }
+  if (options?.worldEventKind) {
+    await page.addInitScript((kind) => {
+      window.__CIVFOLIO_WORLD_EVENT_KIND = kind;
+    }, options.worldEventKind);
   }
   await page.goto("/", { waitUntil: "networkidle" }).catch(async (error) => {
     const message = error instanceof Error ? error.message : String(error);
@@ -555,6 +572,54 @@ test.describe("world map interactions", () => {
     expect(after.radius - before.radius).toBeGreaterThan(0.5);
   });
 
+  test("map clicks do not reset camera zoom after the intro", async ({ page }) => {
+    await openWorldMap(page);
+
+    await skipIntro(page);
+    const zoomed = await page.evaluate(() => {
+      return window.__CIVFOLIO_MAP_TEST__?.zoomCameraOnCity("robot-future", 0.42) ?? false;
+    });
+    expect(zoomed).toBe(true);
+    await page.waitForTimeout(120);
+    const zoomBeforeCityClick = await page.evaluate(() => window.__CIVFOLIO_MAP_TEST__?.getDebug().camera?.zoom ?? 0);
+
+    await clickMapCity(page, "robot-future");
+    await page.waitForTimeout(180);
+    const zoomAfterCityClick = await page.evaluate(() => window.__CIVFOLIO_MAP_TEST__?.getDebug().camera?.zoom ?? 0);
+    expect(Math.abs(zoomAfterCityClick - zoomBeforeCityClick)).toBeLessThan(0.02);
+
+    await page.getByRole("button", { name: "Close" }).click();
+    const clearPoint = await page.evaluate((citySlugs) => {
+      const viewport = { width: window.innerWidth, height: window.innerHeight };
+      const cities = citySlugs
+        .map((slug) => window.__CIVFOLIO_MAP_TEST__?.getCityMetrics(slug) ?? null)
+        .filter((city): city is { x: number; y: number; radius: number } => Boolean(city));
+
+      for (let y = 150; y < viewport.height - 150; y += 44) {
+        for (let x = 80; x < viewport.width - 80; x += 58) {
+          const element = document.elementFromPoint(x, y);
+          const hitsOverlay = Boolean(
+            element?.closest("button, a, input, textarea, select, [data-map-interactive='true']"),
+          );
+          const hitsCanvas = element?.tagName === "CANVAS";
+          const isAwayFromCities = cities.every((city) => Math.hypot(city.x - x, city.y - y) > city.radius + 52);
+          if (hitsCanvas && !hitsOverlay && isAwayFromCities) {
+            return { x, y };
+          }
+        }
+      }
+
+      return null;
+    }, [...CITY_SLUGS]);
+    expect(clearPoint).not.toBeNull();
+
+    const zoomBeforeBackgroundClick = await page.evaluate(() => window.__CIVFOLIO_MAP_TEST__?.getDebug().camera?.zoom ?? 0);
+    await page.mouse.click(clearPoint?.x ?? 0, clearPoint?.y ?? 0);
+    await page.waitForTimeout(180);
+    const zoomAfterBackgroundClick = await page.evaluate(() => window.__CIVFOLIO_MAP_TEST__?.getDebug().camera?.zoom ?? 0);
+    expect(Math.abs(zoomAfterBackgroundClick - zoomBeforeBackgroundClick)).toBeLessThan(0.02);
+  });
+
   test("map camera can pan and moves visible cities on screen", async ({ page }) => {
     await openWorldMap(page);
 
@@ -605,12 +670,127 @@ test.describe("world map interactions", () => {
 
     await skipIntro(page);
 
-    const eventCard = page.getByTestId("world-event-card");
-    const eventMarker = page.getByTestId("world-event-marker");
+    const eventCard = page.getByTestId("world-event-card").first();
+    const eventMarker = page.getByTestId("world-event-marker").first();
     await expect(eventCard).toBeVisible({ timeout: 6_000 });
     await expect(eventMarker).toBeVisible();
-    await expect(eventCard).toHaveAttribute("data-event-kind", /storm|battle|greatLeader|invention/);
+    await expect(eventCard.locator(".world-event-card")).toBeVisible();
+    await expect(eventMarker.locator(".world-event-pulse")).toBeVisible();
+    await expect(eventMarker.locator(".world-event-beacon")).toBeVisible();
+    await expect(eventCard).toContainText("World Event");
+    await expect(eventCard).toHaveAttribute("data-event-kind", /storm|battle|greatLeader|invention|festival|trade|discovery|sabotage/);
     await expect(eventMarker).toHaveAttribute("data-city-slug", /.+/);
+    await expect.poll(async () => {
+      return eventMarker.evaluate((element) => {
+        const icon = element.querySelector(".world-event-beacon")?.getBoundingClientRect();
+        const label = element.querySelector(".world-event-pulse")?.getBoundingClientRect();
+        return Boolean(icon && label && label.top > icon.bottom);
+      });
+    }).toBe(true);
+  });
+
+  test("world events use distinct map effects for every event type", async ({ browser }) => {
+    for (const kind of WORLD_EVENT_KINDS) {
+      const page = await browser.newPage();
+      await openWorldMap(page, {
+        worldEventMinMs: 250,
+        worldEventMaxMs: 250,
+        worldEventDurationMs: 1_500,
+        worldEventKind: kind,
+      });
+
+      await skipIntro(page);
+
+      const eventMarker = page.getByTestId("world-event-marker").first();
+      await expect(eventMarker).toBeVisible({ timeout: 6_000 });
+      await expect(eventMarker).toHaveAttribute("data-event-kind", kind);
+      await expect(page.getByTestId(`world-event-effect-${kind}`).first()).toBeVisible();
+      await page.close();
+    }
+  });
+
+  test("world events can overlap on the live map", async ({ page }) => {
+    await openWorldMap(page, {
+      worldEventMinMs: 250,
+      worldEventMaxMs: 250,
+      worldEventDurationMs: 2_000,
+    });
+
+    await skipIntro(page);
+
+    await expect
+      .poll(async () => page.getByTestId("world-event-marker").count(), { timeout: 5_000 })
+      .toBeGreaterThanOrEqual(2);
+    await expect
+      .poll(async () => page.getByTestId("world-event-card").count(), { timeout: 5_000 })
+      .toBeGreaterThanOrEqual(2);
+  });
+
+  test("overlapping world events avoid repeated kinds and occupied cities", async ({ page }) => {
+    await openWorldMap(page, {
+      worldEventMinMs: 180,
+      worldEventMaxMs: 180,
+      worldEventDurationMs: 2_600,
+    });
+
+    await skipIntro(page);
+
+    await expect
+      .poll(async () => page.getByTestId("world-event-marker").count(), { timeout: 5_000 })
+      .toBeGreaterThanOrEqual(3);
+
+    const activeEvents = await page.getByTestId("world-event-marker").evaluateAll((markers) =>
+      markers.slice(0, 3).map((marker) => ({
+        kind: marker.getAttribute("data-event-kind"),
+        citySlug: marker.getAttribute("data-city-slug"),
+        targetCitySlug: marker.getAttribute("data-target-city-slug") || null,
+      })),
+    );
+
+    const activeKinds = activeEvents.map((event) => event.kind);
+    const occupiedCities = activeEvents.flatMap((event) => [
+      event.citySlug,
+      ...(event.targetCitySlug ? [event.targetCitySlug] : []),
+    ]);
+
+    expect(new Set(activeKinds).size).toBe(activeKinds.length);
+    expect(new Set(occupiedCities).size).toBe(occupiedCities.length);
+  });
+
+  test("battle events anchor between the two involved cities", async ({ page }) => {
+    await openWorldMap(page, {
+      worldEventMinMs: 250,
+      worldEventMaxMs: 250,
+      worldEventDurationMs: 3_500,
+      worldEventKind: "battle",
+    });
+
+    await skipIntro(page);
+
+    const eventMarker = page.getByTestId("world-event-marker").first();
+    await expect(eventMarker).toBeVisible({ timeout: 6_000 });
+    await expect(eventMarker).toHaveAttribute("data-event-kind", "battle");
+
+    const eventPoint = await eventMarker.evaluate((element) => ({
+      sourceSlug: element.getAttribute("data-city-slug"),
+      targetSlug: element.getAttribute("data-target-city-slug"),
+      x: Number(element.getAttribute("data-event-screen-x")),
+      y: Number(element.getAttribute("data-event-screen-y")),
+    }));
+
+    expect(eventPoint.sourceSlug).toBeTruthy();
+    expect(eventPoint.targetSlug).toBeTruthy();
+
+    const sourceMetrics = await getCityMetrics(page, eventPoint.sourceSlug ?? "");
+    const targetMetrics = await getCityMetrics(page, eventPoint.targetSlug ?? "");
+    const mapBox = await page.locator("[data-map-drag-surface='true']").boundingBox();
+    expect(mapBox).toBeTruthy();
+    const midpoint = {
+      x: ((sourceMetrics.x - (mapBox?.x ?? 0)) + (targetMetrics.x - (mapBox?.x ?? 0))) / 2,
+      y: ((sourceMetrics.y - (mapBox?.y ?? 0)) + (targetMetrics.y - (mapBox?.y ?? 0))) / 2,
+    };
+
+    expect(Math.hypot(eventPoint.x - midpoint.x, eventPoint.y - midpoint.y)).toBeLessThan(24);
   });
 
   test("mobile layout keeps the map usable and primary controls reachable", async ({
