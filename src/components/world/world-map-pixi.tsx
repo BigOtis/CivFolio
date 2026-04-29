@@ -246,10 +246,21 @@ declare global {
         sceneVersion: number;
         camera: { x: number; y: number; zoom: number } | null;
         pointer: { down: number; move: number; up: number; dragging: boolean };
+        cities: Array<{ slug: string; x: number; y: number; radius: number }>;
+        viewport: { width: number; height: number } | null;
+        explorer: ExplorerDebugSnapshot | null;
       };
     };
+    __CIVFOLIO_EXPLORER_DEBUG__?: ExplorerDebugSnapshot;
   }
 }
+
+export type ExplorerDebugSnapshot = {
+  introActive: boolean;
+  cameraTarget: { x: number; y: number; zoom: number };
+  defaultCamera: { x: number; y: number; zoom: number };
+  containerSize: { width: number; height: number };
+};
 
 function toPixiColor(value: string) {
   return Number.parseInt(value.replace("#", ""), 16);
@@ -1262,7 +1273,10 @@ export function WorldMapPixi({
   toolUnits: SiteConfig["scene"]["toolUnits"];
   camera: CameraState;
   terrainAtPoint: (x: number, y: number) => "coast" | "plains" | "forest" | "hills" | "highlands";
-  onCameraChange: (camera: CameraState) => void;
+  onCameraChange: (
+    camera: CameraState,
+    options?: { fromClamp?: boolean },
+  ) => void;
   onDragStateChange: (dragging: boolean) => void;
   onBackgroundClick: () => void;
   onOpenWork: (slug: string) => void;
@@ -1484,30 +1498,48 @@ export function WorldMapPixi({
         });
         return true;
       },
-      getDebug: () => ({
-        cityCount: sceneRef.current?.cityNodes.size ?? 0,
-        greatWorkLabelCount: sceneRef.current?.greatWorkLabelLayer.children.length ?? 0,
-        layerOrder:
-          sceneRef.current && viewportRef.current
+      getDebug: () => {
+        const debug = window.__CIVFOLIO_EXPLORER_DEBUG__;
+        return {
+          cityCount: sceneRef.current?.cityNodes.size ?? 0,
+          greatWorkLabelCount: sceneRef.current?.greatWorkLabelLayer.children.length ?? 0,
+          layerOrder:
+            sceneRef.current && viewportRef.current
+              ? {
+                  greatWorks: viewportRef.current.children.indexOf(sceneRef.current.greatWorkLayer),
+                  cities: viewportRef.current.children.indexOf(sceneRef.current.cityLayer),
+                  greatWorkLabels: viewportRef.current.children.indexOf(sceneRef.current.greatWorkLabelLayer),
+                }
+              : null,
+          routeCount: Math.floor((sceneRef.current?.routeLayer.children.length ?? 0) / 2),
+          routePathCount: sceneRef.current?.routeLayer.children.length ?? 0,
+          unitCount: sceneRef.current?.unitNodes.size ?? 0,
+          sceneVersion,
+          camera: viewportRef.current
             ? {
-                greatWorks: viewportRef.current.children.indexOf(sceneRef.current.greatWorkLayer),
-                cities: viewportRef.current.children.indexOf(sceneRef.current.cityLayer),
-                greatWorkLabels: viewportRef.current.children.indexOf(sceneRef.current.greatWorkLabelLayer),
+                x: viewportRef.current.x,
+                y: viewportRef.current.y,
+                zoom: viewportRef.current.scale.x,
               }
             : null,
-        routeCount: Math.floor((sceneRef.current?.routeLayer.children.length ?? 0) / 2),
-        routePathCount: sceneRef.current?.routeLayer.children.length ?? 0,
-        unitCount: sceneRef.current?.unitNodes.size ?? 0,
-        sceneVersion,
-        camera: viewportRef.current
-          ? {
-              x: viewportRef.current.x,
-              y: viewportRef.current.y,
-              zoom: viewportRef.current.scale.x,
-            }
-          : null,
-        pointer: pointerDebugRef.current,
-      }),
+          pointer: pointerDebugRef.current,
+          cities: sceneRef.current
+            ? Array.from(sceneRef.current.cityNodes.entries()).map(([slug, node]) => ({
+                slug,
+                x: node.worldX,
+                y: node.worldY,
+                radius: node.radius,
+              }))
+            : [],
+          viewport: viewportRef.current
+            ? {
+                width: viewportRef.current.screenWidth,
+                height: viewportRef.current.screenHeight,
+              }
+            : null,
+          explorer: debug ?? null,
+        };
+      },
     };
 
     return () => {
@@ -1518,7 +1550,7 @@ export function WorldMapPixi({
   useEffect(() => {
     let cancelled = false;
     const cleanupHost = hostRef.current;
-    let movedHandler: (() => void) | null = null;
+    let movedHandler: ((event?: { type?: string }) => void) | null = null;
     let pointerDownHandler: ((event: PointerEvent) => void) | null = null;
     let pointerMoveHandler: ((event: PointerEvent) => void) | null = null;
     let pointerUpHandler: ((event: PointerEvent) => void) | null = null;
@@ -1547,6 +1579,10 @@ export function WorldMapPixi({
           dragging: boolean;
         }
       | null = null;
+    // Track the last tap to detect double-taps for touch-zoom.
+    let lastTapAt = 0;
+    let lastTapX = 0;
+    let lastTapY = 0;
 
     async function init() {
       try {
@@ -1589,10 +1625,21 @@ export function WorldMapPixi({
           ticker: app.ticker,
         });
 
-        viewport.wheel({ smooth: 4, wheelZoom: true, trackpadPinch: true });
-        viewport.decelerate({ friction: 0.92 });
+        // Higher `smooth` = longer wheel/trackpad zoom ramp for less jitter.
+        viewport.wheel({ smooth: 12, wheelZoom: true, trackpadPinch: true });
+        // Native two-finger pinch on touch devices (and trackpad pinch via the
+        // wheel plugin above). `noDrag` lets our custom drag handler keep
+        // panning while pinching. Slightly softer `percent` makes pinch steps
+        // easier to control.
+        viewport.pinch({ percent: 0.92, noDrag: false });
+        // Gentler coast if another interaction ever feeds the decelerate path.
+        viewport.decelerate({ friction: 0.945, minSpeed: 0.004 });
         viewport.clamp({ direction: "all", underflow: "center" });
-        viewport.clampZoom({ minScale: 0.38, maxScale: 1.52 });
+        // Match the React-side cameraZoomLimits.min on mobile (0.32). The
+        // small change is irrelevant on desktop because the desktop floor
+        // never reaches this clamp, but it lets compact viewports pinch out
+        // to a true fit-to-world overview.
+        viewport.clampZoom({ minScale: 0.32, maxScale: 1.52 });
         viewport.eventMode = "static";
         viewport.sortableChildren = true;
 
@@ -1655,16 +1702,27 @@ export function WorldMapPixi({
         sceneRef.current = scene;
         setSceneVersion((value) => value + 1);
 
-        movedHandler = () => {
+        movedHandler = (event?: { type?: string }) => {
           updateVisibility(scene, viewport, selectedSlugRef.current, hoveredCityRef.current);
           if (syncingCameraRef.current) {
             return;
           }
-          callbacksRef.current.onCameraChange({
-            zoom: viewport.scale.x,
-            x: viewport.x,
-            y: viewport.y,
-          });
+          // The pixi-viewport `clamp` plugin runs on every ticker frame and,
+          // when world is smaller than screen on either axis, re-centers it —
+          // emitting `moved` with `type: "clamp-x"` / `"clamp-y"`. These are
+          // *echoes* of state we already pushed from React, not user gestures,
+          // so we mark them as `fromClamp` to let the explorer keep its tween
+          // target (a real user gesture would clobber the target intentionally
+          // and stop any in-progress tween).
+          const fromClamp = event?.type === "clamp-x" || event?.type === "clamp-y";
+          callbacksRef.current.onCameraChange(
+            {
+              zoom: viewport.scale.x,
+              x: viewport.x,
+              y: viewport.y,
+            },
+            { fromClamp },
+          );
         };
         const shouldIgnoreDragTarget = (target: EventTarget | null) =>
           target instanceof Element &&
@@ -1799,6 +1857,38 @@ export function WorldMapPixi({
             }, event.clientX, event.clientY);
             return;
           }
+
+          // Double-tap to zoom: two background taps within 320ms and 28px
+          // anchor the zoom under the tap point.
+          const now = Date.now();
+          const tapClientX = event.clientX;
+          const tapClientY = event.clientY;
+          if (
+            event.pointerType !== "mouse" &&
+            now - lastTapAt < 320 &&
+            Math.hypot(tapClientX - lastTapX, tapClientY - lastTapY) < 28
+          ) {
+            const localX = tapClientX - hostRect.left;
+            const localY = tapClientY - hostRect.top;
+            const previousScale = viewport.scale.x;
+            const targetScale = clamp(previousScale * (previousScale >= 1.05 ? 1 / 1.6 : 1.6), 0.38, 1.52);
+            const worldAnchor = viewport.toWorld(localX, localY);
+            const marginX = Math.min(220, Math.max(96, host.clientWidth * 0.18));
+            const marginY = Math.min(180, Math.max(72, host.clientHeight * 0.18));
+            const minX = host.clientWidth - staticWorldWidth * targetScale - marginX;
+            const maxX = marginX;
+            const minY = host.clientHeight - staticWorldHeight * targetScale - marginY;
+            const maxY = marginY;
+            viewport.scale.set(targetScale);
+            viewport.x = clamp(localX - worldAnchor.x * targetScale, Math.min(minX, maxX), Math.max(minX, maxX));
+            viewport.y = clamp(localY - worldAnchor.y * targetScale, Math.min(minY, maxY), Math.max(minY, maxY));
+            movedHandler?.();
+            lastTapAt = 0;
+            return;
+          }
+          lastTapAt = now;
+          lastTapX = tapClientX;
+          lastTapY = tapClientY;
 
           callbacksRef.current.onBackgroundClick();
         };

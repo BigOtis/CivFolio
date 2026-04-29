@@ -27,6 +27,9 @@
 
 html {
   scroll-behavior: smooth;
+  /* Prevent the root document from rubber-banding on iOS when a child
+     surface (the world map, the city sheet) handles its own gestures. */
+  overscroll-behavior: none;
 }
 
 body {
@@ -38,6 +41,7 @@ body {
     radial-gradient(circle at 20% 20%, rgba(244, 211, 141, 0.07), transparent 30%),
     linear-gradient(180deg, #16100c 0%, #0f0a08 100%);
   background-attachment: fixed;
+  overscroll-behavior: none;
 }
 
 a,
@@ -100,6 +104,12 @@ summary {
 
 .hud-drift {
   animation: hudDrift 9s ease-in-out infinite alternate;
+}
+
+@media (pointer: coarse), (max-width: 760px) {
+  .hud-drift {
+    animation: none;
+  }
 }
 
 .city-banner {

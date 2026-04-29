@@ -14,6 +14,8 @@ const eslintConfig = defineConfig([
     "test-results/**",
     "playwright-report/**",
     "next-env.d.ts",
+    // Local mobile audit scripts (one-off snapshots, not shipped code).
+    "tmp/**",
   ]),
 ]);
 

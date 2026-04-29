@@ -2,7 +2,16 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { Fragment, startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  startTransition,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { WorkDetail } from "@/components/work/work-detail";
@@ -47,6 +56,30 @@ const initialCamera: CameraState = {
   y: 30,
 };
 
+const INTRO_DISMISSED_KEY = "civfolio:intro-dismissed:v1";
+
+function markIntroDismissed() {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.localStorage.setItem(INTRO_DISMISSED_KEY, "1");
+  } catch {
+    // Storage may be disabled; nothing to persist.
+  }
+}
+
+function clearIntroDismissed() {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.localStorage.removeItem(INTRO_DISMISSED_KEY);
+  } catch {
+    // Storage may be disabled; nothing to clear.
+  }
+}
+
 function getDefaultCamera({
   isMobile,
   viewport,
@@ -60,17 +93,149 @@ function getDefaultCamera({
     return initialCamera;
   }
 
+  // Reserve vertical space for the mobile HUD up top (~64px) and the
+  // timeline/sheet handle at the bottom (~140px) so cities are never hidden
+  // behind chrome at the default fit. Horizontal margin keeps a small breath
+  // along the edges so the map doesn't kiss the viewport border.
+  const horizontalMargin = 24;
+  const verticalChromeAllowance = 200;
+  const usableWidth = Math.max(viewport.width - horizontalMargin, 1);
+  const usableHeight = Math.max(viewport.height - verticalChromeAllowance, 1);
+
   const overviewZoom = clamp(
-    Math.min(((viewport.width - 24) / world.width) * 1.18, (viewport.height * 0.54) / world.height),
-    0.38,
-    0.54,
+    Math.min(usableWidth / world.width, usableHeight / world.height),
+    0.32,
+    0.6,
   );
 
   return {
     zoom: overviewZoom,
     x: viewport.width * 0.5 - world.width * overviewZoom * 0.5,
-    y: viewport.height * 0.43 - world.height * overviewZoom * 0.5,
+    // Bias slightly upward so the map's vertical center sits above the
+    // bottom-anchored timeline rather than getting clipped underneath it.
+    y: (viewport.height - verticalChromeAllowance * 0.45) * 0.5 - world.height * overviewZoom * 0.5,
   };
+}
+
+// Mobile bottom-sheet height ratios as fraction of available container height.
+// peek leaves room to glance at the map; half is the comfortable read state;
+// full consumes the screen for deep reading.
+const MOBILE_SHEET_HEIGHT_RATIOS = {
+  peek: 0.22,
+  half: 0.52,
+  full: 0.86,
+} as const;
+
+type SheetState = "peek" | "half" | "full";
+const SHEET_STATE_ORDER: readonly SheetState[] = ["peek", "half", "full"];
+
+function getMobileSheetHeightRatio(state: SheetState) {
+  return MOBILE_SHEET_HEIGHT_RATIOS[state];
+}
+
+function MobileSheetHandle({
+  state,
+  onChange,
+  onDismiss,
+}: {
+  state: SheetState;
+  onChange: (next: SheetState) => void;
+  onDismiss: () => void;
+}) {
+  const dragRef = useRef<{
+    pointerId: number;
+    startY: number;
+    startState: SheetState;
+    moved: boolean;
+  } | null>(null);
+
+  const stepInDirection = useCallback(
+    (delta: number, current: SheetState) => {
+      const index = SHEET_STATE_ORDER.indexOf(current);
+      const next = SHEET_STATE_ORDER[clamp(index + delta, 0, SHEET_STATE_ORDER.length - 1)];
+      return next ?? current;
+    },
+    [],
+  );
+
+  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startY: event.clientY,
+      startState: state,
+      moved: false,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) {
+      return;
+    }
+    const dy = event.clientY - drag.startY;
+    if (Math.abs(dy) > 6) {
+      drag.moved = true;
+    }
+  };
+
+  const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    dragRef.current = null;
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    } catch {}
+
+    if (!drag || drag.pointerId !== event.pointerId) {
+      return;
+    }
+
+    const dy = event.clientY - drag.startY;
+
+    if (!drag.moved || Math.abs(dy) < 28) {
+      // Treat as a tap: cycle to the next larger state, or dismiss from peek.
+      if (drag.startState === "peek") {
+        onChange("half");
+      } else if (drag.startState === "half") {
+        onChange("full");
+      } else {
+        onChange("half");
+      }
+      return;
+    }
+
+    // Drag down -> step toward peek (and dismiss past peek). Drag up -> step
+    // toward full.
+    if (dy > 0) {
+      const next = stepInDirection(-1, drag.startState);
+      if (next === drag.startState && drag.startState === "peek" && dy > 80) {
+        onDismiss();
+        return;
+      }
+      onChange(next);
+    } else {
+      onChange(stepInDirection(1, drag.startState));
+    }
+  };
+
+  return (
+    <div
+      role="slider"
+      aria-label="City dossier sheet position"
+      aria-valuetext={state}
+      data-testid="city-popup-handle"
+      data-sheet-state={state}
+      className="flex w-full cursor-grab touch-none items-center justify-center pt-2 pb-1.5 active:cursor-grabbing"
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={() => {
+        dragRef.current = null;
+      }}
+    >
+      <div className="h-1.5 w-12 rounded-full bg-white/30" />
+    </div>
+  );
 }
 
 type WorldEventKind =
@@ -489,6 +654,7 @@ export function WorldExplorer({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const cameraTargetRef = useRef<CameraState>(initialCamera);
   const cameraFrameRef = useRef<number | null>(null);
+  const lastCameraTickRef = useRef<number | null>(null);
   const appliedCameraModeRef = useRef<string | null>(null);
   const isDraggingRef = useRef(false);
   const introCancelledRef = useRef(false);
@@ -527,6 +693,28 @@ export function WorldExplorer({
   const [selectedUnitLock, setSelectedUnitLock] = useState<{ id: string; x: number; y: number } | null>(null);
   const [introActive, setIntroActive] = useState(site.scene.introEnabled);
   const [introIndex, setIntroIndex] = useState(0);
+  // Once the intro has been dismissed or completed it stays dismissed across
+  // reloads. Replay button always re-enables it.
+  // We use useLayoutEffect so the dismissal lands before the intro-sequence
+  // effect runs and tries to advance the timeline to the first founding step.
+  useLayoutEffect(() => {
+    if (typeof window === "undefined" || !site.scene.introEnabled) {
+      return;
+    }
+    try {
+      if (window.localStorage.getItem(INTRO_DISMISSED_KEY) === "1") {
+        // Mark cancelled so the year-restore effect snaps the map back to the
+        // latest year if the intro effect briefly nudged it during the first
+        // render pass.
+        introCancelledRef.current = true;
+        setIntroActive(false);
+        const finalYear = world.years[world.years.length - 1];
+        setSelectedYear(finalYear);
+      }
+    } catch {
+      // Storage may be disabled (private mode); fall through.
+    }
+  }, [site.scene.introEnabled, world.years]);
   const [showLeader, setShowLeader] = useState(false);
   const [showLegend, setShowLegend] = useState(false);
   const [showMobileControls, setShowMobileControls] = useState(false);
@@ -534,11 +722,30 @@ export function WorldExplorer({
   const [isDragging, setIsDragging] = useState(false);
   const [showCreatorPrompt, setShowCreatorPrompt] = useState(false);
   const [activeWorldEvents, setActiveWorldEvents] = useState<ActiveWorldEvent[]>([]);
+  const [sheetState, setSheetState] = useState<SheetState>("half");
+  const mobileHudRef = useRef<HTMLDivElement | null>(null);
+  const [mobileHudHeight, setMobileHudHeight] = useState(0);
+  // Dismissable per-session "tap anywhere to enable music" toast. We only
+  // surface it when the browser actually blocked autoplay (audio.status ===
+  // "blocked") and the user has not dismissed it for this session.
+  const [audioToastDismissed, setAudioToastDismissed] = useState(false);
   const audio = useWorldAudio(site.audio);
+  // Auto-dismiss the audio toast once the user interacts and the music
+  // actually starts playing. The user already knows audio is on at that
+  // point, so the prompt is no longer useful.
+  useEffect(() => {
+    if (audio.status === "on" && !audioToastDismissed) {
+      setAudioToastDismissed(true);
+    }
+  }, [audio.status, audioToastDismissed]);
   const { playIntroCue, playIntroTransition, playWorldEventCue } = audio;
   const isTablet = containerSize.width < 1100;
   const isMobile = containerSize.width < 760;
   const isShort = containerSize.height < 760;
+  // isCompact treats short landscape phones (e.g. 720x400) like mobile so the
+  // map stays visible. Width-based mobile is the default; landscape phones
+  // collapse the same way when they're both short and not very wide.
+  const isCompact = isMobile || (isShort && containerSize.width < 920);
   const showMobileTimeline = !isMobile || !introActive;
 
   useEffect(() => {
@@ -567,20 +774,48 @@ export function WorldExplorer({
     isDraggingRef.current = isDragging;
   }, [isDragging]);
 
+  // Track the mobile HUD height so panels (Map Key, Leader Profile) can sit
+  // immediately under it instead of relying on a magic `pt-20`.
+  useEffect(() => {
+    const node = mobileHudRef.current;
+    if (!node) {
+      setMobileHudHeight(0);
+      return;
+    }
+    const update = () => {
+      setMobileHudHeight(node.getBoundingClientRect().height);
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [isCompact, showMobileControls, showLeader]);
+
   useEffect(() => {
     if (cameraFrameRef.current !== null) {
       window.cancelAnimationFrame(cameraFrameRef.current);
       cameraFrameRef.current = null;
     }
+    lastCameraTickRef.current = null;
 
-    const tick = () => {
+    const tick = (now: number) => {
       setCamera((current) => {
         const target = cameraTargetRef.current;
-        const ease = isDraggingRef.current ? 0.34 : 0.16;
+        let dt = 16.7;
+        if (lastCameraTickRef.current !== null) {
+          dt = Math.min(56, Math.max(8, now - lastCameraTickRef.current));
+        }
+        lastCameraTickRef.current = now;
+
+        // Frame-rate independent exponential smoothing so pans/zooms ease cleanly
+        // on high-refresh displays and under load (vs. a fixed 0.16 lerp).
+        const dragBoost = isDraggingRef.current ? 1.5 : 1;
+        const lambda = 11.5 * dragBoost;
+        const alpha = 1 - Math.exp((-lambda * dt) / 1000);
         const next = {
-          zoom: current.zoom + (target.zoom - current.zoom) * ease,
-          x: current.x + (target.x - current.x) * ease,
-          y: current.y + (target.y - current.y) * ease,
+          zoom: current.zoom + (target.zoom - current.zoom) * alpha,
+          x: current.x + (target.x - current.x) * alpha,
+          y: current.y + (target.y - current.y) * alpha,
         };
 
         if (
@@ -589,6 +824,7 @@ export function WorldExplorer({
           Math.abs(next.y - target.y) < 0.5
         ) {
           cameraFrameRef.current = null;
+          lastCameraTickRef.current = null;
           return target;
         }
 
@@ -604,6 +840,7 @@ export function WorldExplorer({
         window.cancelAnimationFrame(cameraFrameRef.current);
         cameraFrameRef.current = null;
       }
+      lastCameraTickRef.current = null;
     };
   }, [cameraMotionToken]);
 
@@ -695,7 +932,9 @@ export function WorldExplorer({
   );
   const cameraZoomLimits = useMemo(
     () => ({
-      min: isMobile ? 0.38 : 0.58,
+      // Lower min on mobile so the user can pull all the way out to a true
+      // fit-to-world overview on small screens.
+      min: isMobile ? 0.32 : 0.58,
       max: 1.52,
     }),
     [isMobile],
@@ -792,6 +1031,7 @@ export function WorldExplorer({
     setIntroIndex(0);
     setCameraTarget(defaultCamera);
     updateWorkInRoute();
+    clearIntroDismissed();
     setIntroActive(true);
   }
 
@@ -811,6 +1051,7 @@ export function WorldExplorer({
     if (resetCamera) {
       setCameraTarget(defaultCamera);
     }
+    markIntroDismissed();
     setIntroActive(false);
   }
 
@@ -839,32 +1080,57 @@ export function WorldExplorer({
     const current = cameraTargetRef.current;
     const viewportWidth = viewportSize.width;
     const viewportHeight = viewportSize.height;
-    const desiredX = viewportWidth * (isTablet ? 0.52 : 0.58) - x * current.zoom;
-    const desiredY = viewportHeight * 0.54 - y * current.zoom;
-    const dx = clamp(desiredX - current.x, -120, 120);
-    const dy = clamp(desiredY - current.y, -72, 72);
+    // On mobile the bottom sheet covers the lower portion of the screen; we
+    // pin the focused point to the visible region above it so the city stays
+    // glanceable while the dossier is open.
+    const sheetReserveBottom = isCompact && Boolean(selectedSlug)
+      ? Math.min(viewportHeight * getMobileSheetHeightRatio(sheetState), viewportHeight - 96)
+      : 0;
+    const visibleHeight = Math.max(120, viewportHeight - sheetReserveBottom);
+    const focusFractionX = isCompact ? 0.5 : isTablet ? 0.52 : 0.58;
+    const focusFractionY = isCompact ? 0.46 : 0.54;
+    const desiredX = viewportWidth * focusFractionX - x * current.zoom;
+    const desiredY = visibleHeight * focusFractionY - y * current.zoom;
+    const dx = clamp(desiredX - current.x, -180, 180);
+    const dy = clamp(desiredY - current.y, isCompact ? -240 : -72, isCompact ? 240 : 72);
 
     setCameraTarget({
       zoom: current.zoom,
-      x: current.x + dx * 0.22,
-      y: current.y + dy * 0.18,
+      x: current.x + dx * (isCompact ? 0.32 : 0.22),
+      y: current.y + dy * (isCompact ? 0.38 : 0.18),
     });
   }
 
   function focusPointForIntro(x: number, y: number) {
-    const current = cameraTargetRef.current;
-    const introZoom = isMobile
-      ? clamp(Math.max(current.zoom, 0.58), 0.46, 0.78)
-      : clamp(Math.max(current.zoom, 1.02), 0.72, 1.18);
+    // Frame each founding city generously: derive zoom from the fit-to-world
+    // overview so small phones zoom in ~2.4× while wide desktop lands ~1.9×,
+    // then center the city. Biasing lower on compact keeps the tile clear of
+    // the bottom intro card; on desktop the card is top-aligned so we bias
+    // a little lower on the screen.
+    const overviewZoom = defaultCamera.zoom;
+    const introZoom = isCompact
+      ? clamp(
+          Math.max(overviewZoom * 2.45, 0.8),
+          0.76,
+          Math.min(0.98, cameraZoomLimits.max),
+        )
+      : clamp(
+          Math.max(overviewZoom * 1.88, 1.06),
+          0.94,
+          Math.min(1.38, cameraZoomLimits.max),
+        );
     const viewportWidth = viewportSize.width;
     const viewportHeight = viewportSize.height;
-    const desiredX = viewportWidth * 0.5 - x * introZoom;
-    const desiredY = viewportHeight * (isMobile ? 0.46 : 0.56) - y * introZoom;
+    const focusFractionX = 0.5;
+    const focusFractionY = isCompact ? 0.37 : isTablet ? 0.54 : 0.58;
+
+    const desiredX = viewportWidth * focusFractionX - x * introZoom;
+    const desiredY = viewportHeight * focusFractionY - y * introZoom;
 
     setCameraTarget({
       zoom: introZoom,
-      x: current.x + clamp(desiredX - current.x, -340, 340) * 0.78,
-      y: current.y + clamp(desiredY - current.y, -220, 220) * 0.72,
+      x: desiredX,
+      y: desiredY,
     });
   }
 
@@ -986,6 +1252,15 @@ export function WorldExplorer({
   }, [activeWorldEvents]);
 
   useEffect(() => {
+    if (!selectedSlug) {
+      return;
+    }
+    // Default to a comfortable read state every time a city opens; the user
+    // can drag/expand from there.
+    setSheetState("half");
+  }, [selectedSlug]);
+
+  useEffect(() => {
     if (!selectedCity) {
       return;
     }
@@ -998,6 +1273,16 @@ export function WorldExplorer({
     nudgeTowardsPoint(selectedCity.x, selectedCity.y);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCity?.slug, containerSize.height, containerSize.width]);
+
+  useEffect(() => {
+    if (!isCompact || !selectedCity) {
+      return;
+    }
+    // When the sheet snaps to a new height, re-nudge the camera so the
+    // selected city remains visible above the sheet.
+    nudgeTowardsPoint(selectedCity.x, selectedCity.y);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sheetState, isCompact]);
 
   useEffect(() => {
     if (selectedSlug || showLeader) {
@@ -1041,6 +1326,20 @@ export function WorldExplorer({
       setSelectedYear(latestYear);
     }
   }, [introActive, latestYear]);
+
+  // Expose a small debug snapshot so e2e tests can inspect React-side camera
+  // state (target, defaults) that PIXI's debug API can't otherwise see.
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.__CIVFOLIO_EXPLORER_DEBUG__ = {
+      introActive,
+      cameraTarget: { ...cameraTargetRef.current },
+      defaultCamera: { ...defaultCamera },
+      containerSize: { ...containerSize },
+    };
+  });
 
   useEffect(() => {
     if (introActive && !introActiveRef.current) {
@@ -1232,7 +1531,8 @@ export function WorldExplorer({
     introTimeoutRef.current = window.setTimeout(() => {
       if (introIndex >= introSequence.length - 1) {
         setSelectedYear(latestYear);
-        setCameraTarget(initialCamera);
+        setCameraTarget(defaultCamera);
+        markIntroDismissed();
         setIntroActive(false);
         return;
       }
@@ -1245,9 +1545,23 @@ export function WorldExplorer({
         introTimeoutRef.current = null;
       }
     };
-    // focusPointForIntro intentionally tracks the latest layout/camera refs without driving effect resets.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [audio.playIntroCue, containerSize.width, introActive, introIndex, introSequence, isMobile, latestYear, selectedSlug, showLeader, world.states, world.years]);
+  }, [
+    audio.playIntroCue,
+    containerSize.height,
+    containerSize.width,
+    defaultCamera,
+    introActive,
+    introIndex,
+    introSequence,
+    isCompact,
+    isMobile,
+    isTablet,
+    latestYear,
+    selectedSlug,
+    showLeader,
+    world.states,
+    world.years,
+  ]);
 
   useEffect(() => {
     const delayMs = window.__CIVFOLIO_CREATOR_PROMPT_DELAY_MS ?? 60_000;
@@ -1304,6 +1618,15 @@ export function WorldExplorer({
           "relative isolate min-h-[calc(100svh-3.75rem)] overflow-hidden rounded-[18px] border border-[rgba(244,211,141,0.18)] bg-[radial-gradient(circle_at_top,_rgba(70,120,160,0.28),_rgba(11,12,17,0.98)_56%)] shadow-[0_40px_120px_rgba(0,0,0,0.42)] sm:min-h-[calc(100vh-6.75rem)] sm:rounded-[34px]",
           isDragging ? "cursor-grabbing" : "cursor-grab",
         )}
+        style={{
+          // Prevent iOS rubber-banding from triggering inside the map and
+          // keep native pinch/scroll from fighting our pointer-driven
+          // pan/zoom. PIXI's canvas already sets `touch-action: none`; we
+          // mirror it here so chrome layered above the canvas inherits the
+          // same behaviour and the page itself never scroll-bounces.
+          touchAction: "none",
+          overscrollBehavior: "contain",
+        }}
       >
         <div className="world-atmosphere pointer-events-none absolute inset-0" />
         <WorldMapPixi
@@ -1322,9 +1645,25 @@ export function WorldExplorer({
           toolUnits={site.scene.toolUnits}
           camera={camera}
           terrainAtPoint={terrainAtPoint}
-          onCameraChange={(nextCamera) => {
+          onCameraChange={(nextCamera, options) => {
             const clamped = clampCameraToWorld(nextCamera);
-            cameraTargetRef.current = clamped;
+            // Clamp-plugin echoes follow our own React → PIXI sync; they would
+            // otherwise overwrite the in-progress tween target with the
+            // *current* (interpolated) camera state and prematurely settle the
+            // tween at the wrong zoom/position. Real user gestures (drag,
+            // wheel, pinch) come through without `fromClamp` and DO update the
+            // target so the tween stops fighting the user.
+            if (!options?.fromClamp) {
+              cameraTargetRef.current = clamped;
+              // PIXI already moved the viewport (drag, wheel, pinch, or test
+              // helpers). Drop any pending React-side rAF lerp so we never
+              // overwrite that authoritative state on the next frame.
+              if (cameraFrameRef.current !== null) {
+                window.cancelAnimationFrame(cameraFrameRef.current);
+                cameraFrameRef.current = null;
+              }
+              lastCameraTickRef.current = null;
+            }
             setCamera(clamped);
           }}
           onDragStateChange={setIsDragging}
@@ -1341,33 +1680,81 @@ export function WorldExplorer({
           className="world-fog pointer-events-none absolute inset-0"
         />
 
+        {isCompact ? (
+          <div
+            data-testid="mobile-zoom-rail"
+            className="pointer-events-none absolute right-2 z-30 flex flex-col items-center gap-1.5"
+            style={{
+              top: mobileHudHeight > 0 ? mobileHudHeight + 16 : 80,
+            }}
+          >
+            <button
+              type="button"
+              data-testid="mobile-zoom-in"
+              aria-label="Zoom in"
+              onClick={() => {
+                audio.playUiClick("toggle");
+                stopIntro();
+                adjustZoom(0.12);
+              }}
+              className="pointer-events-auto inline-flex h-9 w-9 items-center justify-center rounded-full border border-[rgba(244,211,141,0.18)] bg-[rgba(14,10,8,0.78)] text-base font-semibold text-[var(--accent-strong)] shadow-[0_12px_28px_rgba(0,0,0,0.3)] backdrop-blur-md transition hover:border-[var(--accent)] active:scale-95"
+            >
+              +
+            </button>
+            <button
+              type="button"
+              data-testid="mobile-zoom-out"
+              aria-label="Zoom out"
+              onClick={() => {
+                audio.playUiClick("toggle");
+                stopIntro();
+                adjustZoom(-0.12);
+              }}
+              className="pointer-events-auto inline-flex h-9 w-9 items-center justify-center rounded-full border border-[rgba(244,211,141,0.18)] bg-[rgba(14,10,8,0.78)] text-base font-semibold text-[var(--accent-strong)] shadow-[0_12px_28px_rgba(0,0,0,0.3)] backdrop-blur-md transition hover:border-[var(--accent)] active:scale-95"
+            >
+              −
+            </button>
+            <button
+              type="button"
+              data-testid="mobile-zoom-reset"
+              aria-label="Reset view"
+              onClick={() => {
+                audio.playUiClick("toggle");
+                resetView();
+              }}
+              className="pointer-events-auto inline-flex h-8 w-9 items-center justify-center rounded-full border border-white/10 bg-[rgba(14,10,8,0.7)] text-[10px] uppercase tracking-[0.1em] text-[var(--muted-soft)] shadow-[0_10px_22px_rgba(0,0,0,0.28)] backdrop-blur-md transition hover:border-[var(--accent)] hover:text-[var(--accent-strong)] active:scale-95"
+            >
+              Fit
+            </button>
+          </div>
+        ) : null}
+
         <div
           className={cn(
             "pointer-events-none absolute z-20",
-            isMobile ? "inset-x-1.5 top-1.5" : "inset-x-4 top-4 flex items-start justify-between gap-4 flex-wrap",
+            isMobile
+              ? "inset-x-1.5 top-[max(env(safe-area-inset-top),0.375rem)]"
+              : "inset-x-4 top-4 flex items-start justify-between gap-4 flex-wrap",
           )}
         >
           {isMobile ? (
             <div
               data-testid="mobile-hud"
+              ref={mobileHudRef}
               className="hud-drift pointer-events-auto rounded-[14px] border border-[rgba(244,211,141,0.14)] bg-[rgba(14,10,8,0.7)] px-2 py-1.5 shadow-[0_16px_36px_rgba(0,0,0,0.28)] backdrop-blur-xl"
             >
-              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
                 <div className="min-w-0">
-                  <div className="flex min-w-0 flex-wrap items-center gap-1">
-                    <span className="rounded-full border border-[var(--accent)] bg-[rgba(244,211,141,0.08)] px-2 py-0.5 text-[7px] uppercase tracking-[0.12em] text-[var(--accent-strong)]">
-                      World Map
-                    </span>
-                    <span className="rounded-full border border-white/10 px-2 py-0.5 text-[7px] uppercase tracking-[0.1em] text-[var(--muted)]">
-                      {currentState.label}
-                    </span>
-                  </div>
-                  <h1 className="mt-1 font-display text-[1rem] leading-none text-[var(--parchment)]">
+                  <h1 className="font-display text-[1.05rem] leading-none text-[var(--parchment)]">
                     {leader.name}
-                    <span className="mt-0.5 block text-[7px] uppercase tracking-[0.1em] text-[var(--accent-strong)]">
-                      Strategy Map of Work
-                    </span>
                   </h1>
+                  <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1.5 text-[10px] uppercase tracking-[0.08em] text-[var(--accent-strong)]">
+                    <span className="truncate">Strategy Map</span>
+                    <span aria-hidden="true" className="text-[var(--muted)]">
+                      ·
+                    </span>
+                    <span className="truncate text-[var(--muted)]">{currentState.label}</span>
+                  </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
                   <OverlayButton
@@ -1380,7 +1767,7 @@ export function WorldExplorer({
                       setShowLeader((value) => !value);
                       updateWorkInRoute();
                     }}
-                    className="min-h-7 px-2 py-1 text-[7px] tracking-[0.1em]"
+                    className="min-h-8 px-2.5 py-1.5 text-[10px] tracking-[0.08em]"
                   >
                     Leader
                   </OverlayButton>
@@ -1391,7 +1778,7 @@ export function WorldExplorer({
                       setShowMobileTimelineDetails(false);
                       setShowMobileControls((value) => !value);
                     }}
-                    className="min-h-7 px-2 py-1 text-[7px] tracking-[0.1em]"
+                    className="min-h-8 px-2.5 py-1.5 text-[10px] tracking-[0.08em]"
                   >
                     Controls
                   </OverlayButton>
@@ -1401,42 +1788,8 @@ export function WorldExplorer({
               {showMobileControls ? (
                 <div
                   data-testid="mobile-controls-panel"
-                  className="mt-1.5 grid grid-cols-3 gap-1.5 border-t border-white/10 pt-1.5"
+                  className="mt-1.5 grid grid-cols-2 gap-1.5 border-t border-white/10 pt-1.5"
                 >
-                  <OverlayButton
-                    onClick={() => {
-                      audio.playUiClick("toggle");
-                      stopIntro();
-                      adjustZoom(-0.08);
-                    }}
-                    className="min-h-8 w-full px-2.5 py-1.5 text-[8px] tracking-[0.12em]"
-                  >
-                    -
-                  </OverlayButton>
-                  <OverlayButton
-                    onClick={() => {
-                      audio.playUiClick("toggle");
-                      stopIntro();
-                      adjustZoom(0.08);
-                    }}
-                    className="min-h-8 w-full px-2.5 py-1.5 text-[8px] tracking-[0.12em]"
-                  >
-                    +
-                  </OverlayButton>
-                  <OverlayButton onClick={resetView} className="min-h-8 w-full px-2.5 py-1.5 text-[8px] tracking-[0.12em]">Reset</OverlayButton>
-                  <OverlayButton
-                    onClick={() => {
-                      audio.playUiClick("toggle");
-                      void audio.toggleMusic();
-                    }}
-                    className="min-h-8 w-full px-2.5 py-1.5 text-[8px] tracking-[0.12em]"
-                  >
-                    {audio.status === "on"
-                      ? "Music on"
-                      : audio.status === "blocked"
-                        ? "Audio blocked"
-                        : "Music off"}
-                  </OverlayButton>
                   <OverlayButton
                     active={showLegend}
                     onClick={() => {
@@ -1444,17 +1797,57 @@ export function WorldExplorer({
                       stopIntro();
                       setShowLegend((value) => !value);
                     }}
-                    className="min-h-8 w-full px-2.5 py-1.5 text-[8px] tracking-[0.12em]"
+                    className="min-h-9 w-full px-2.5 py-1.5 text-[11px] tracking-[0.08em]"
                   >
                     Map Key
                   </OverlayButton>
+                  <OverlayButton
+                    onClick={() => {
+                      audio.playUiClick("toggle");
+                      void audio.toggleMusic();
+                    }}
+                    className="min-h-9 w-full px-2.5 py-1.5 text-[11px] tracking-[0.08em]"
+                    aria-label={
+                      audio.status === "on"
+                        ? "Mute music"
+                        : audio.status === "blocked"
+                          ? "Audio blocked"
+                          : "Unmute music"
+                    }
+                  >
+                    {audio.status === "on"
+                      ? "Mute"
+                      : audio.status === "blocked"
+                        ? "Audio blocked"
+                        : "Unmute"}
+                  </OverlayButton>
+                  <Link
+                    href="/archive"
+                    onClick={() => {
+                      audio.playUiClick("button");
+                      setShowMobileControls(false);
+                    }}
+                    className="inline-flex min-h-9 w-full items-center justify-center rounded-full border border-white/12 bg-[rgba(255,255,255,0.06)] px-2.5 py-1.5 text-[11px] uppercase tracking-[0.08em] text-[var(--muted-soft)] transition hover:border-[var(--accent)] hover:text-[var(--accent-strong)]"
+                  >
+                    Civilopedia
+                  </Link>
+                  <Link
+                    href="/about"
+                    onClick={() => {
+                      audio.playUiClick("button");
+                      setShowMobileControls(false);
+                    }}
+                    className="inline-flex min-h-9 w-full items-center justify-center rounded-full border border-white/12 bg-[rgba(255,255,255,0.06)] px-2.5 py-1.5 text-[11px] uppercase tracking-[0.08em] text-[var(--muted-soft)] transition hover:border-[var(--accent)] hover:text-[var(--accent-strong)]"
+                  >
+                    About
+                  </Link>
                   {introActive ? null : (
                     <OverlayButton
                       onClick={() => {
                         audio.playUiClick("button");
                         startIntro();
                       }}
-                      className="min-h-8 w-full px-2.5 py-1.5 text-[8px] tracking-[0.12em]"
+                      className="col-span-2 min-h-9 w-full px-2.5 py-1.5 text-[11px] tracking-[0.08em]"
                     >
                       Replay Intro
                     </OverlayButton>
@@ -1592,7 +1985,7 @@ export function WorldExplorer({
                   : "pointer-events-none opacity-0 -translate-y-3 scale-[0.985] blur-[2px]",
               )}
             >
-              <div className={cn("uppercase text-[var(--accent-strong)]", isMobile ? "text-[8px] tracking-[0.2em]" : "text-[10px] tracking-[0.28em]")}>
+              <div className={cn("uppercase text-[var(--accent-strong)]", isMobile ? "text-[10px] tracking-[0.12em]" : "text-[10px] tracking-[0.28em]")}>
                 Campaign Replay · {introIndex + 1}/{introSequence.length}
               </div>
               <div
@@ -1601,7 +1994,7 @@ export function WorldExplorer({
               >
                 Founding {currentIntroWork.title}
               </div>
-              <div className={cn("flex flex-wrap items-center justify-center uppercase text-[var(--muted)]", isMobile ? "mt-2 gap-1 text-[8px] tracking-[0.12em]" : "mt-3 gap-2 text-[10px] tracking-[0.22em]")}>
+              <div className={cn("flex flex-wrap items-center justify-center uppercase text-[var(--muted)]", isMobile ? "mt-2 gap-1 text-[10px] tracking-[0.08em]" : "mt-3 gap-2 text-[10px] tracking-[0.22em]")}>
                 <span className={cn("rounded-full border border-white/10", isMobile ? "px-2 py-0.5" : "px-3 py-1")}>{currentIntroWork.era}</span>
                 <span className={cn("rounded-full border border-white/10", isMobile ? "px-2 py-0.5" : "px-3 py-1")}>{currentIntroWork.startYear}</span>
                 <span className={cn("rounded-full border border-white/10", isMobile ? "px-2 py-0.5" : "px-3 py-1")}>{formatDisciplineLabel(currentIntroWork.discipline)}</span>
@@ -1624,7 +2017,7 @@ export function WorldExplorer({
                     audio.playUiClick("close");
                     stopIntro({ resetCamera: true });
                   }}
-                  className={isMobile ? "min-h-8 px-4 py-1.5 text-[8px] tracking-[0.16em]" : undefined}
+                  className={isMobile ? "min-h-9 px-4 py-1.5 text-[11px] tracking-[0.1em]" : undefined}
                 >
                   Skip Intro
                 </OverlayButton>
@@ -1681,14 +2074,14 @@ export function WorldExplorer({
           );
         })}
 
-        {showMobileTimeline ? (
+        {showMobileTimeline && !(isCompact && Boolean(selectedSlug) && sheetState !== "peek") ? (
           <div
             data-map-interactive="true"
             data-testid={isMobile ? "mobile-timeline-shell" : undefined}
             className={cn(
               "absolute z-20 rounded-[28px] border border-[rgba(244,211,141,0.14)] bg-[rgba(14,10,8,0.68)] shadow-[0_20px_45px_rgba(0,0,0,0.28)] backdrop-blur-xl",
               isMobile
-                ? "bottom-2 left-2 right-2 rounded-[20px] px-3 py-2"
+                ? "bottom-[max(env(safe-area-inset-bottom),0.5rem)] left-2 right-2 rounded-[20px] px-3 py-2"
                 : isTablet
                   ? "bottom-4 left-4 right-40 px-5 py-4"
                   : "bottom-4 left-4 max-w-[620px] px-5 py-4",
@@ -1696,7 +2089,7 @@ export function WorldExplorer({
           >
             <div className={cn("flex items-start justify-between", isMobile ? "gap-2" : "flex-wrap gap-3")}>
               <div>
-                <div className={cn("uppercase text-[var(--muted)]", isMobile ? "text-[8px] tracking-[0.14em]" : "text-[10px] tracking-[0.28em]")}>Time progression</div>
+                <div className={cn("uppercase text-[var(--muted)]", isMobile ? "text-[10px] tracking-[0.08em]" : "text-[10px] tracking-[0.28em]")}>Time progression</div>
                 <div className={cn("mt-1 font-display text-[var(--accent-strong)]", isMobile ? "text-[2rem]" : "text-3xl")}>
                   {selectedYear}
                 </div>
@@ -1710,7 +2103,7 @@ export function WorldExplorer({
                     setShowMobileControls(false);
                     setShowMobileTimelineDetails((value) => !value);
                   }}
-                  className="min-h-8 shrink-0 px-3 py-1.5 text-[8px] tracking-[0.12em]"
+                  className="min-h-8 shrink-0 px-3 py-1.5 text-[11px] tracking-[0.08em]"
                 >
                   {showMobileTimelineDetails ? "Hide" : "Details"}
                 </OverlayButton>
@@ -1735,28 +2128,68 @@ export function WorldExplorer({
               showMobileTimelineDetails ? (
                 <>
                   <div className="mt-2 line-clamp-2 text-[12px] leading-5 text-[var(--muted-soft)]">{currentState.description}</div>
-                  <div className="mt-2 flex justify-between text-[8px] uppercase tracking-[0.1em] text-[var(--muted)]">
-                    {world.years.map((year) => (
-                      <span key={year}>{year}</span>
-                    ))}
+                  {/* Year tick rail. Years are absolutely positioned at the
+                      slider's actual notch positions (with the same horizontal
+                      inset the native range thumb uses) so the labels line up
+                      with the thumb instead of stretching edge-to-edge. */}
+                  <div
+                    aria-hidden="true"
+                    className="relative mt-2 h-3 px-2 text-[10px] uppercase tracking-[0.08em] text-[var(--muted)]"
+                  >
+                    {world.years.map((year, index, list) => {
+                      const total = list.length;
+                      const isFirst = index === 0;
+                      const isLast = index === total - 1;
+                      const isMiddle = total > 2 && index === Math.floor(total / 2);
+                      // On compact screens we keep just the first, middle and
+                      // last labels visible; the rail rendering below shows the
+                      // intermediate ticks as small marks.
+                      const visible = isFirst || isLast || isMiddle;
+                      const leftPct = total > 1 ? (index / (total - 1)) * 100 : 50;
+                      return (
+                        <Fragment key={year}>
+                          <span
+                            className={cn(
+                              "absolute top-0 -translate-x-1/2 text-[var(--muted)]",
+                              !visible && "opacity-0",
+                            )}
+                            style={{ left: `${leftPct}%` }}
+                          >
+                            {year}
+                          </span>
+                          {!visible ? (
+                            <span
+                              className="absolute top-0 h-1 w-px -translate-x-1/2 bg-white/15"
+                              style={{ left: `${leftPct}%` }}
+                            />
+                          ) : null}
+                        </Fragment>
+                      );
+                    })}
                   </div>
-                  <div className="-mx-1 mt-2 overflow-x-auto pb-1">
-                    <div className="flex min-w-max gap-1.5 px-1">
-                      {(["all", "code", "art", "music", "video", "writing", "client"] as const).map((discipline) => (
-                        <OverlayButton
-                          key={discipline}
-                          active={filter === discipline}
-                          onClick={() => {
-                            audio.playUiClick("toggle");
-                            stopIntro();
-                            setFilter(discipline);
-                          }}
-                          className="min-h-8 px-2.5 py-1.5 text-[8px] tracking-[0.12em]"
-                        >
-                          {discipline === "all" ? "All" : formatDisplayLabel(discipline)}
-                        </OverlayButton>
-                      ))}
+                  <div className="filter-scroll-rail relative mt-2 -mx-1">
+                    <div className="overflow-x-auto pb-1">
+                      <div className="flex min-w-max gap-1.5 px-1">
+                        {(["all", "code", "art", "music", "video", "writing", "client"] as const).map((discipline) => (
+                          <OverlayButton
+                            key={discipline}
+                            active={filter === discipline}
+                            onClick={() => {
+                              audio.playUiClick("toggle");
+                              stopIntro();
+                              setFilter(discipline);
+                            }}
+                            className="min-h-9 px-3 py-1.5 text-[11px] tracking-[0.08em]"
+                          >
+                            {discipline === "all" ? "All" : formatDisplayLabel(discipline)}
+                          </OverlayButton>
+                        ))}
+                      </div>
                     </div>
+                    {/* Right-edge fade so the user knows there is more
+                        content scrolled off to the right. Pointer events are
+                        disabled so the mask never blocks chip taps. */}
+                    <div className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-[rgba(14,10,8,0.85)] via-[rgba(14,10,8,0.45)] to-transparent" />
                   </div>
                 </>
               ) : null
@@ -1791,9 +2224,16 @@ export function WorldExplorer({
         ) : null}
 
         {isMobile && legendPanelVisible ? (
-          <div className="pointer-events-none absolute inset-0 z-[58] flex items-start justify-center p-2 pt-20">
+          <div
+            className="pointer-events-none absolute inset-x-0 z-[58] flex items-start justify-center px-2"
+            style={{
+              top: mobileHudHeight > 0 ? mobileHudHeight + 16 : 80,
+              bottom: 0,
+            }}
+          >
             <div
               data-map-interactive="true"
+              data-testid="mobile-legend-panel"
               className={cn(
                 "panel-enter pointer-events-auto w-full max-h-[calc(100svh-6rem)] overflow-y-auto overscroll-contain rounded-[20px] border border-[rgba(244,211,141,0.14)] bg-[rgba(14,10,8,0.86)] p-3 text-sm leading-6 text-[var(--muted-soft)] shadow-[0_20px_45px_rgba(0,0,0,0.28)] backdrop-blur-xl transition-[opacity,transform,filter] duration-220 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform",
                 showLegend
@@ -1974,7 +2414,7 @@ export function WorldExplorer({
           </div>
         </div>
 
-        {hoveredCity ? (
+        {hoveredCity && !isCompact ? (
           (() => {
             const city = mapState.cities.find((candidate) => candidate.slug === hoveredCity);
             if (!city) {
@@ -2045,6 +2485,44 @@ export function WorldExplorer({
           </div>
         ) : null}
 
+        {audio.status === "blocked" && !audioToastDismissed ? (
+          <div
+            data-testid="audio-toast"
+            data-map-interactive="true"
+            className={cn(
+              "panel-enter pointer-events-auto absolute z-[59] rounded-[16px] border border-[rgba(244,211,141,0.22)] bg-[rgba(16,11,9,0.92)] px-3 py-2 text-[var(--muted-soft)] shadow-[0_18px_40px_rgba(0,0,0,0.38)] backdrop-blur-xl",
+              isMobile
+                ? "left-2 right-2"
+                : "right-4 max-w-[22rem]",
+            )}
+            style={
+              isMobile
+                ? { top: mobileHudHeight > 0 ? mobileHudHeight + 12 : 80 }
+                : { top: 96 }
+            }
+          >
+            <div className="flex items-start gap-3">
+              <div className="flex-1">
+                <div className="text-[10px] uppercase tracking-[0.18em] text-[var(--accent-strong)]">
+                  Ambient music
+                </div>
+                <div className="mt-1 text-[12px] leading-5">
+                  Tap anywhere to enable the soundtrack, or open Controls to keep it muted.
+                </div>
+              </div>
+              <button
+                type="button"
+                aria-label="Dismiss audio notice"
+                data-testid="audio-toast-dismiss"
+                onClick={() => setAudioToastDismissed(true)}
+                className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/10 text-[14px] leading-none text-[var(--muted-soft)] transition hover:border-[var(--accent)] hover:text-[var(--accent-strong)] active:scale-95"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         {creatorPromptVisible ? (
           <div
             data-testid="creator-prompt"
@@ -2089,8 +2567,15 @@ export function WorldExplorer({
           <div
             className={cn(
               "pointer-events-none absolute inset-0 z-[60] flex p-4",
-              isMobile ? "items-start justify-center p-2 pt-20" : "items-center justify-center",
+              isMobile ? "items-start justify-center p-2" : "items-center justify-center",
             )}
+            style={
+              isMobile
+                ? {
+                    paddingTop: mobileHudHeight > 0 ? mobileHudHeight + 16 : 80,
+                  }
+                : undefined
+            }
           >
             <div
               data-map-interactive="true"
@@ -2104,53 +2589,187 @@ export function WorldExplorer({
                   : "pointer-events-none opacity-0 -translate-y-2 scale-[0.985] blur-[2px]",
               )}
             >
-            <div className="flex items-start justify-between gap-4 border-b border-white/10 px-5 py-4">
-                <div className="flex items-start gap-4">
+            <div
+              className={cn(
+                "border-b border-white/10",
+                isCompact
+                  ? "flex flex-col gap-3 px-3 py-3"
+                  : "flex items-start justify-between gap-4 px-5 py-4",
+              )}
+            >
+              <div
+                className={cn(
+                  isCompact ? "flex items-center gap-3" : "flex items-start gap-4",
+                )}
+              >
                 <Image
                   src={leader.avatar}
                   alt={leader.name}
                   width={640}
                   height={640}
-                  className="h-20 w-20 rounded-[24px] border border-white/10 object-cover"
+                  className={cn(
+                    "rounded-[20px] border border-white/10 object-cover",
+                    isCompact ? "h-12 w-12 shrink-0 rounded-[16px]" : "h-20 w-20 rounded-[24px]",
+                  )}
                   unoptimized
                 />
-                <div>
-                  <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--accent-strong)]">Leader Screen</div>
-                  <h2 className="mt-2 font-display text-4xl leading-none text-[var(--parchment)]">{leader.name}</h2>
-                  <p className="mt-2 text-sm leading-7 text-[var(--muted-soft)]">{leader.headline}</p>
-                  {leader.currentRole ? (
+                <div className="min-w-0 flex-1">
+                  <div
+                    className={cn(
+                      "uppercase text-[var(--accent-strong)]",
+                      isCompact
+                        ? "text-[8px] tracking-[0.18em]"
+                        : "text-[10px] tracking-[0.24em]",
+                    )}
+                  >
+                    Leader Screen
+                  </div>
+                  <h2
+                    className={cn(
+                      "mt-1 font-display leading-none text-[var(--parchment)]",
+                      isCompact ? "text-xl" : "mt-2 text-4xl",
+                    )}
+                  >
+                    {leader.name}
+                  </h2>
+                  {!isCompact ? (
+                    <p className="mt-2 text-sm leading-7 text-[var(--muted-soft)]">{leader.headline}</p>
+                  ) : null}
+                  {leader.currentRole && !isCompact ? (
                     <p className="mt-2 text-[10px] uppercase tracking-[0.24em] text-[var(--muted)]">
                       Current office: {leader.currentRole}
                     </p>
                   ) : null}
                 </div>
+                {isCompact ? (
+                  <OverlayButton
+                    onClick={() => {
+                      audio.playUiClick("close");
+                      setShowLeader(false);
+                    }}
+                    className="min-h-8 shrink-0 px-2.5 py-1 text-[8px] tracking-[0.14em]"
+                  >
+                    Close
+                  </OverlayButton>
+                ) : null}
               </div>
-              <OverlayButton
-                onClick={() => {
-                  audio.playUiClick("close");
-                  setShowLeader(false);
-                }}
-                className="px-3 py-2 text-[10px]"
-              >
-                Close
-              </OverlayButton>
+              {isCompact ? (
+                <div className="space-y-1">
+                  <p className="text-[12px] leading-5 text-[var(--muted-soft)]">{leader.headline}</p>
+                  {leader.currentRole ? (
+                    <p className="text-[8px] uppercase tracking-[0.18em] text-[var(--muted)]">
+                      Current office: {leader.currentRole}
+                    </p>
+                  ) : null}
+                </div>
+              ) : (
+                <OverlayButton
+                  onClick={() => {
+                    audio.playUiClick("close");
+                    setShowLeader(false);
+                  }}
+                  className="px-3 py-2 text-[10px]"
+                >
+                  Close
+                </OverlayButton>
+              )}
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5 pb-8">
-            <p className="text-sm leading-7 text-[var(--muted-soft)]">{leader.summary}</p>
+            <div
+              className={cn(
+                "min-h-0 flex-1 overflow-y-auto overscroll-contain",
+                isCompact ? "px-3 py-3 pb-6" : "px-5 py-5 pb-8",
+              )}
+            >
+            <p
+              className={cn(
+                "text-[var(--muted-soft)]",
+                isCompact ? "text-[12px] leading-5" : "text-sm leading-7",
+              )}
+            >
+              {leader.summary}
+            </p>
 
-            <div className="mt-5 grid gap-3 sm:grid-cols-3">
-              <div className="rounded-[20px] border border-white/10 bg-[rgba(255,255,255,0.05)] px-4 py-3">
-                <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--muted)]">Civilization</div>
-                <div className="mt-1 text-sm text-[var(--parchment)]">Builder-Technologist</div>
+            <div
+              className={cn(
+                "grid gap-3",
+                isCompact ? "mt-3 grid-cols-2" : "mt-5 sm:grid-cols-3",
+              )}
+            >
+              <div
+                className={cn(
+                  "rounded-[20px] border border-white/10 bg-[rgba(255,255,255,0.05)]",
+                  isCompact ? "px-3 py-2" : "px-4 py-3",
+                )}
+              >
+                <div
+                  className={cn(
+                    "uppercase text-[var(--muted)]",
+                    isCompact
+                      ? "text-[8px] tracking-[0.18em]"
+                      : "text-[10px] tracking-[0.24em]",
+                  )}
+                >
+                  Civilization
+                </div>
+                <div
+                  className={cn(
+                    "mt-1 text-[var(--parchment)]",
+                    isCompact ? "text-[12px]" : "text-sm",
+                  )}
+                >
+                  Builder-Technologist
+                </div>
               </div>
-              <div className="rounded-[20px] border border-white/10 bg-[rgba(255,255,255,0.05)] px-4 py-3">
-                <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--muted)]">Capital</div>
-                <div className="mt-1 text-sm text-[var(--parchment)]">Robot Future</div>
+              <div
+                className={cn(
+                  "rounded-[20px] border border-white/10 bg-[rgba(255,255,255,0.05)]",
+                  isCompact ? "px-3 py-2" : "px-4 py-3",
+                )}
+              >
+                <div
+                  className={cn(
+                    "uppercase text-[var(--muted)]",
+                    isCompact
+                      ? "text-[8px] tracking-[0.18em]"
+                      : "text-[10px] tracking-[0.24em]",
+                  )}
+                >
+                  Capital
+                </div>
+                <div
+                  className={cn(
+                    "mt-1 text-[var(--parchment)]",
+                    isCompact ? "text-[12px]" : "text-sm",
+                  )}
+                >
+                  Robot Future
+                </div>
               </div>
-              <div className="rounded-[20px] border border-white/10 bg-[rgba(255,255,255,0.05)] px-4 py-3">
-                <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--muted)]">Current Campaign</div>
-                <div className="mt-1 text-sm text-[var(--parchment)]">Agentic AI Systems</div>
+              <div
+                className={cn(
+                  "rounded-[20px] border border-white/10 bg-[rgba(255,255,255,0.05)]",
+                  isCompact ? "col-span-2 px-3 py-2" : "px-4 py-3",
+                )}
+              >
+                <div
+                  className={cn(
+                    "uppercase text-[var(--muted)]",
+                    isCompact
+                      ? "text-[8px] tracking-[0.18em]"
+                      : "text-[10px] tracking-[0.24em]",
+                  )}
+                >
+                  Current Campaign
+                </div>
+                <div
+                  className={cn(
+                    "mt-1 text-[var(--parchment)]",
+                    isCompact ? "text-[12px]" : "text-sm",
+                  )}
+                >
+                  Agentic AI Systems
+                </div>
               </div>
             </div>
 
@@ -2206,24 +2825,58 @@ export function WorldExplorer({
         {selectedWorkPanel.present && selectedWorkPanel.retained ? (
           <div
             data-map-interactive="true"
+            data-testid="city-popup"
+            data-sheet-state={isCompact ? sheetState : "desktop"}
             className={cn(
-              "panel-enter absolute z-30 flex flex-col overflow-hidden rounded-[30px] border border-[rgba(244,211,141,0.18)] bg-[rgba(16,11,9,0.86)] shadow-[0_28px_90px_rgba(0,0,0,0.42)] backdrop-blur-xl transition-[opacity,transform,filter] duration-240 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform",
-              isMobile
-                ? "bottom-2 left-2 right-2 top-auto max-h-[min(72svh,calc(100%-5.5rem))] rounded-[22px]"
-                : "bottom-4 right-4 top-28 w-[min(440px,calc(100%-2rem))] lg:right-6 lg:top-24",
+              "panel-enter absolute z-30 flex flex-col overflow-hidden border border-[rgba(244,211,141,0.18)] bg-[rgba(16,11,9,0.86)] shadow-[0_28px_90px_rgba(0,0,0,0.42)] backdrop-blur-xl transition-[opacity,transform,filter,height] duration-240 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform",
+              isCompact
+                ? "bottom-0 left-0 right-0 top-auto rounded-t-[22px] pb-[env(safe-area-inset-bottom)]"
+                : "bottom-4 right-4 top-28 w-[min(440px,calc(100%-2rem))] rounded-[30px] lg:right-6 lg:top-24",
               selectedWork && selectedWorkVisible
                 ? "pointer-events-auto opacity-100 translate-x-0 scale-100 blur-0"
                 : "pointer-events-none opacity-0 translate-x-4 scale-[0.985] blur-[2px]",
             )}
+            style={
+              isCompact
+                ? {
+                    height: `calc(${getMobileSheetHeightRatio(sheetState) * 100}svh)`,
+                    maxHeight: "calc(100svh - 1rem)",
+                  }
+                : undefined
+            }
           >
-            <div className="flex items-center justify-between gap-4 border-b border-white/10 px-5 py-3">
-              <div>
-                <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--accent-strong)]">City Management View</div>
-                <h2 className="mt-1 font-display text-2xl leading-none text-[var(--parchment)] sm:text-3xl">{selectedWorkPanel.retained.title}</h2>
+            {isCompact ? (
+              <MobileSheetHandle
+                state={sheetState}
+                onChange={setSheetState}
+                onDismiss={closePanels}
+              />
+            ) : null}
+            <div className={cn("flex items-center justify-between gap-3 border-b border-white/10", isCompact ? "px-4 pb-2 pt-1" : "px-5 py-3")}>
+              <div className="min-w-0 flex-1">
+                <div className={cn("uppercase text-[var(--accent-strong)]", isCompact ? "text-[10px] tracking-[0.18em]" : "text-[10px] tracking-[0.24em]")}>
+                  City Management View
+                </div>
+                <h2 className={cn("mt-1 truncate font-display leading-none text-[var(--parchment)]", isCompact ? "text-xl" : "text-2xl sm:text-3xl")}>
+                  {selectedWorkPanel.retained.title}
+                </h2>
               </div>
-              <OverlayButton onClick={closePanels} className="px-3 py-2 text-[10px]">Close</OverlayButton>
+              <OverlayButton
+                onClick={closePanels}
+                aria-label="Close city dossier"
+                className={cn("shrink-0", isCompact ? "px-3 py-1.5 text-[10px]" : "px-3 py-2 text-[10px]")}
+              >
+                Close
+              </OverlayButton>
             </div>
-            <div data-testid="city-popup-body" className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4 pb-5">
+            <div
+              data-testid="city-popup-body"
+              className={cn(
+                "min-h-0 flex-1 overflow-y-auto overscroll-contain",
+                isCompact ? "px-4 py-3 pb-5" : "px-5 py-4 pb-5",
+                sheetState === "peek" && isCompact ? "pointer-events-none opacity-50" : null,
+              )}
+            >
               <WorkDetail
                 work={selectedWorkPanel.retained}
                 github={selectedPanelGithub || undefined}
@@ -2239,26 +2892,56 @@ export function WorldExplorer({
             return (
           <div
             data-map-interactive="true"
+            data-testid="hidden-work-panel"
             className={cn(
               "panel-enter absolute z-30 rounded-[30px] border border-[rgba(244,211,141,0.18)] bg-[rgba(16,11,9,0.86)] p-6 shadow-[0_28px_90px_rgba(0,0,0,0.42)] backdrop-blur-xl transition-[opacity,transform,filter] duration-240 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform",
-              isMobile ? "left-2 right-2 top-28 rounded-[22px] p-4" : "right-4 top-28 w-[min(440px,calc(100%-2rem))]",
+              isMobile
+                ? mobileHudHeight > 0
+                  ? "left-2 right-2 rounded-[22px] p-4"
+                  : "left-2 right-2 top-28 rounded-[22px] p-4"
+                : "right-4 top-28 w-[min(440px,calc(100%-2rem))]",
               selectedWork && !selectedWorkVisible
                 ? "pointer-events-auto opacity-100 translate-x-0 scale-100 blur-0"
                 : "pointer-events-none opacity-0 translate-x-4 scale-[0.985] blur-[2px]",
             )}
+            style={
+              isMobile && mobileHudHeight > 0
+                ? { top: mobileHudHeight + 16 }
+                : undefined
+            }
           >
-            <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--accent-strong)]">Not visible in {selectedYear}</div>
-            <h2 className="mt-3 font-display text-4xl text-[var(--parchment)]">{retainedHiddenWork.title}</h2>
-            <p className="mt-3 text-sm leading-8 text-[var(--muted-soft)]">
+            <div className="flex items-start justify-between gap-3">
+              <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--accent-strong)]">
+                Not visible in {selectedYear}
+              </div>
+              <button
+                type="button"
+                aria-label="Close"
+                data-testid="hidden-work-close"
+                onClick={closePanels}
+                className="pointer-events-auto inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/10 bg-[rgba(14,10,8,0.7)] text-[14px] leading-none text-[var(--muted-soft)] transition hover:border-[var(--accent)] hover:text-[var(--accent-strong)] active:scale-95"
+              >
+                ×
+              </button>
+            </div>
+            <h2 className={cn("mt-3 font-display text-[var(--parchment)]", isMobile ? "text-2xl leading-tight" : "text-4xl")}>
+              {retainedHiddenWork.title}
+            </h2>
+            <p className={cn("mt-3 text-[var(--muted-soft)]", isMobile ? "text-[13px] leading-6" : "text-sm leading-8")}>
               This city has not appeared in the selected era. Jump to its founding year or open the full dossier route directly.
             </p>
-            <div className="mt-5 flex flex-wrap gap-3">
-              <OverlayButton onClick={() => jumpToWorkYear(retainedHiddenWork)} active>
+            <div className="mt-5 flex flex-wrap gap-2">
+              <OverlayButton onClick={() => jumpToWorkYear(retainedHiddenWork)} active className={isMobile ? "min-h-9 text-[11px] tracking-[0.08em]" : undefined}>
                 Jump to {retainedHiddenWork.startYear}
               </OverlayButton>
               <Link
                 href={`/work/${retainedHiddenWork.slug}`}
-                className="rounded-full border border-white/10 px-4 py-2 text-[11px] uppercase tracking-[0.24em] text-[var(--muted-soft)]"
+                className={cn(
+                  "rounded-full border border-white/10 uppercase text-[var(--muted-soft)]",
+                  isMobile
+                    ? "min-h-9 px-3 py-1.5 text-[11px] tracking-[0.08em] inline-flex items-center justify-center"
+                    : "px-4 py-2 text-[11px] tracking-[0.24em]",
+                )}
               >
                 Open Dossier
               </Link>

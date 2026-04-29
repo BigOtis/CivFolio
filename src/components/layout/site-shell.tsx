@@ -23,7 +23,13 @@ export function SiteShell({
       <header
         className={
           minimal
-            ? "pointer-events-none fixed inset-x-0 top-0 z-50 px-1.5 pt-1.5 sm:px-4 sm:pt-3"
+            ? // Below 760px the world map provides its own HUD (matching the
+              // `isMobile` breakpoint used by WorldExplorer) with the same nav
+              // surfaces (Civilopedia, About) reachable from the Controls panel.
+              // Hide the SiteShell pill on those viewports so it does not
+              // compete with the in-map HUD or intercept its pointer events,
+              // then re-expose it on wider screens where there is room for both.
+              "pointer-events-none fixed inset-x-0 top-0 z-50 hidden px-1.5 pt-1.5 min-[760px]:block sm:px-4 sm:pt-3"
             : "sticky top-0 z-40 border-b border-white/10 bg-[rgba(15,10,8,0.72)] backdrop-blur"
         }
       >
@@ -80,7 +86,7 @@ export function SiteShell({
           </nav>
         </div>
       </header>
-      <main className={minimal ? "pt-[3.25rem] sm:pt-[4.5rem]" : undefined}>{children}</main>
+      <main className={minimal ? "min-[760px]:pt-[4.5rem]" : undefined}>{children}</main>
       {minimal ? null : (
         <footer className="border-t border-white/10 bg-[rgba(15,10,8,0.82)]">
           <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 py-8 text-sm text-[var(--muted)] sm:px-6 lg:px-8 md:flex-row md:items-center md:justify-between">
