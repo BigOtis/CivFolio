@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Project Empire icon</title>
+  <defs>
+    <radialGradient id="bg" cx="38%" cy="24%" r="76%">
+      <stop offset="0" stop-color="#3f6f86"/>
+      <stop offset="0.42" stop-color="#17253a"/>
+      <stop offset="1" stop-color="#0d0907"/>
+    </radialGradient>
+    <linearGradient id="gold" x1="108" y1="84" x2="408" y2="430">
+      <stop offset="0" stop-color="#fff0ba"/>
+      <stop offset="0.45" stop-color="#d8b470"/>
+      <stop offset="1" stop-color="#8c6035"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="108" fill="url(#bg)"/>
+  <path d="M98 352 256 88l158 264-158 74Z" fill="#0f171b" opacity=".72"/>
+  <path d="M256 96 406 354 256 424 106 354 256 96Zm0 62-94 162 94 44 94-44-94-162Z" fill="url(#gold)"/>
+  <path d="M173 318h166l-83-143-83 143Z" fill="#101820"/>
+  <path d="M256 178v186M174 318h164" stroke="#f4d38d" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M196 272h120M218 228h76" stroke="#d59750" stroke-width="16" stroke-linecap="round"/>
+  <circle cx="256" cy="96" r="18" fill="#fff2c4"/>
+  <circle cx="106" cy="354" r="14" fill="#d8b470"/>
+  <circle cx="406" cy="354" r="14" fill="#d8b470"/>
+</svg>

@@ -1781,10 +1781,10 @@ export function WorldExplorer({
               <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
                 <div className="min-w-0">
                   <h1 className="font-display text-[1.05rem] leading-none text-[var(--parchment)]">
-                    {leader.name}
+                    {site.title}
                   </h1>
                   <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1.5 text-[10px] uppercase tracking-[0.08em] text-[var(--accent-strong)]">
-                    <span className="truncate">Strategy Map</span>
+                    <span className="truncate">{leader.name}</span>
                     <span aria-hidden="true" className="text-[var(--muted)]">
                       ·
                     </span>
@@ -1900,20 +1900,20 @@ export function WorldExplorer({
               >
                 <div className="flex flex-wrap items-center gap-3">
                   <span className="rounded-full border border-[var(--accent)] bg-[rgba(244,211,141,0.08)] px-3 py-1 text-[10px] uppercase tracking-[0.28em] text-[var(--accent-strong)]">
-                    Living world portfolio
+                    Project Empire
                   </span>
                   <span className="rounded-full border border-white/10 px-3 py-1 text-[10px] uppercase tracking-[0.24em] text-[var(--muted)]">
                     {currentState.label}
                   </span>
                 </div>
                 <h1 className={cn("mt-3 font-display leading-[0.94] text-[var(--parchment)]", isTablet ? "text-5xl" : "text-6xl")}>
-                  {leader.name}
+                  {site.title}
                   <span className="mt-2 block uppercase text-[0.5em] leading-[1.08] tracking-[0.18em] text-[var(--accent-strong)]">
-                    Strategy Map of Work
+                    {leader.name}&apos;s Strategy Map of Work
                   </span>
                 </h1>
                 <p className={cn("mt-3 max-w-xl text-[var(--muted-soft)]", isTablet ? "text-sm leading-6" : "text-sm leading-7")}>
-                  Pan, zoom, scrub time, and open cities to inspect the systems, products, and media work that built this world.
+                  Pan, zoom, scrub time, and open cities across a project empire built from AI systems, games, public writing, and infrastructure work.
                 </p>
                 <div className="mt-4 flex flex-wrap gap-2">
                   <OverlayButton
