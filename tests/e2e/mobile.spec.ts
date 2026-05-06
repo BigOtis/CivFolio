@@ -40,6 +40,102 @@ async function openCity(page: Page, slug: string) {
   }
 }
 
+async function tapCityOnMap(page: Page, slug: string) {
+  await page.waitForFunction(
+    (citySlug) => Boolean(window.__CIVFOLIO_MAP_TEST__?.getCityMetrics(citySlug)),
+    slug,
+  );
+  const metrics = await page.evaluate((citySlug) => window.__CIVFOLIO_MAP_TEST__?.getCityMetrics(citySlug), slug);
+  if (!metrics) {
+    throw new Error(`Could not find city metrics for ${slug}`);
+  }
+  const map = page.getByRole("img", { name: "Project Empire world map" });
+  await expect(map).toBeVisible();
+  await map.evaluate(
+    (node, point) => {
+      const base: PointerEventInit = {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        pointerId: 21,
+        pointerType: "touch",
+        isPrimary: true,
+        clientX: point.x,
+        clientY: point.y,
+        button: 0,
+      };
+      node.dispatchEvent(new PointerEvent("pointerdown", { ...base, buttons: 1 }));
+      node.dispatchEvent(new PointerEvent("pointerup", { ...base, buttons: 0 }));
+    },
+    { x: metrics.x, y: metrics.y },
+  );
+}
+
+async function getCamera(page: Page) {
+  const camera = await page.evaluate(() => window.__CIVFOLIO_MAP_TEST__?.getDebug().camera ?? null);
+  if (!camera) {
+    throw new Error("Camera debug state missing");
+  }
+  return camera;
+}
+
+async function pinchMap(page: Page, startDistance: number, endDistance: number) {
+  const map = page.getByRole("img", { name: "Project Empire world map" });
+  await expect(map).toBeVisible();
+  await map.evaluate(
+    async (node, gesture) => {
+      const rect = node.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      const emit = (
+        type: string,
+        pointerId: number,
+        clientX: number,
+        clientY: number,
+        buttons: number,
+      ) => {
+        node.dispatchEvent(
+          new PointerEvent(type, {
+            bubbles: true,
+            cancelable: true,
+            composed: true,
+            pointerId,
+            pointerType: "touch",
+            isPrimary: pointerId === 11,
+            clientX,
+            clientY,
+            button: type === "pointermove" ? -1 : 0,
+            buttons,
+          }),
+        );
+      };
+
+      const pointFor = (distance: number, side: -1 | 1) => ({
+        x: centerX + side * (distance / 2),
+        y: centerY,
+      });
+      const startA = pointFor(gesture.startDistance, -1);
+      const startB = pointFor(gesture.startDistance, 1);
+      emit("pointerdown", 11, startA.x, startA.y, 1);
+      emit("pointerdown", 12, startB.x, startB.y, 1);
+      for (let step = 1; step <= 8; step++) {
+        const distance =
+          gesture.startDistance + ((gesture.endDistance - gesture.startDistance) * step) / 8;
+        const nextA = pointFor(distance, -1);
+        const nextB = pointFor(distance, 1);
+        emit("pointermove", 11, nextA.x, nextA.y, 1);
+        emit("pointermove", 12, nextB.x, nextB.y, 1);
+        await new Promise((resolve) => setTimeout(resolve, 8));
+      }
+      const endA = pointFor(gesture.endDistance, -1);
+      const endB = pointFor(gesture.endDistance, 1);
+      emit("pointerup", 11, endA.x, endA.y, 0);
+      emit("pointerup", 12, endB.x, endB.y, 0);
+    },
+    { startDistance, endDistance },
+  );
+}
+
 test.describe("mobile bottom-sheet dossier", () => {
   test.setTimeout(60_000);
 
@@ -199,7 +295,7 @@ test.describe("intro dismissal persistence", () => {
     await expect(page.getByTestId("intro-panel")).toHaveCount(0);
 
     const storedBefore = await page.evaluate(() =>
-      window.localStorage.getItem("project-empire:intro-dismissed:v1"),
+      window.localStorage.getItem("project-empire:intro-dismissed:v2"),
     );
     expect(storedBefore).toBe("1");
 
@@ -222,7 +318,7 @@ test.describe("intro dismissal persistence", () => {
     await expect(page.getByTestId("intro-panel")).toBeVisible();
 
     const storedAfterReplay = await page.evaluate(() =>
-      window.localStorage.getItem("project-empire:intro-dismissed:v1"),
+      window.localStorage.getItem("project-empire:intro-dismissed:v2"),
     );
     expect(storedAfterReplay).toBeNull();
   });
@@ -252,10 +348,11 @@ test.describe("mobile HUD branding", () => {
     await gotoMobile(page);
     const hud = page.getByTestId("mobile-hud");
     await expect(hud).toBeVisible();
-    // The mobile HUD should have a single Strategy Map subtitle, not the
+    // The mobile HUD should lead with Project Empire branding, not the
     // legacy "World Map" pill that duplicated the SiteShell breadcrumb.
     await expect(hud).not.toContainText("World Map");
-    await expect(hud).toContainText("Strategy Map");
+    await expect(hud).toContainText("Project Empire");
+    await expect(hud).toContainText("Phil Lopez");
   });
 });
 
@@ -296,6 +393,63 @@ test.describe("mobile floating zoom rail", () => {
   test("rail renders on short landscape phones (compact mode)", async ({ page }) => {
     await gotoMobile(page, SHORT_LANDSCAPE_VIEWPORT);
     await expect(page.getByTestId("mobile-zoom-rail")).toBeVisible();
+  });
+});
+
+test.describe("mobile touch map interactions", () => {
+  test.setTimeout(60_000);
+
+  test("two-finger pinch zooms in and out without opening a city sheet", async ({ page }) => {
+    await gotoMobile(page);
+    const initial = await getCamera(page);
+
+    await pinchMap(page, 90, 230);
+    await expect
+      .poll(async () => (await getCamera(page)).zoom, { timeout: 4000 })
+      .toBeGreaterThan(initial.zoom + 0.08);
+    const zoomedIn = await getCamera(page);
+
+    await pinchMap(page, 240, 110);
+    await expect
+      .poll(async () => (await getCamera(page)).zoom, { timeout: 4000 })
+      .toBeLessThan(zoomedIn.zoom - 0.05);
+
+    await expect(page.getByTestId("city-popup")).toHaveCount(0);
+  });
+
+  test("tapping a city on the map opens the sheet without moving the camera", async ({ page }) => {
+    await gotoMobile(page);
+    await page.waitForTimeout(250);
+    const before = await getCamera(page);
+
+    await tapCityOnMap(page, "robot-future");
+    await expect(page.getByTestId("city-popup")).toBeVisible();
+    await expect(page.getByTestId("city-popup")).toHaveAttribute("data-sheet-state", "half");
+    await page.waitForTimeout(350);
+
+    const after = await getCamera(page);
+    expect(Math.abs(after.zoom - before.zoom)).toBeLessThan(0.01);
+    expect(Math.abs(after.x - before.x)).toBeLessThan(1.5);
+    expect(Math.abs(after.y - before.y)).toBeLessThan(1.5);
+  });
+
+  test("tapping another city while the mobile sheet is open preserves the map position", async ({
+    page,
+  }) => {
+    await gotoMobile(page);
+    await tapCityOnMap(page, "robot-future");
+    await expect(page.getByTestId("city-popup")).toBeVisible();
+    await page.waitForTimeout(250);
+    const before = await getCamera(page);
+
+    await tapCityOnMap(page, "popcurrent");
+    await expect(page).toHaveURL(/work=popcurrent/);
+    await page.waitForTimeout(350);
+
+    const after = await getCamera(page);
+    expect(Math.abs(after.zoom - before.zoom)).toBeLessThan(0.01);
+    expect(Math.abs(after.x - before.x)).toBeLessThan(1.5);
+    expect(Math.abs(after.y - before.y)).toBeLessThan(1.5);
   });
 });
 
@@ -357,7 +511,7 @@ test.describe("Phase 3 - mobile typography floor", () => {
   test("HUD subtitle, Leader/Controls buttons render at >= 10px", async ({ page }) => {
     await gotoMobile(page);
 
-    const subtitle = page.getByTestId("mobile-hud").locator("span", { hasText: "Strategy Map" }).first();
+    const subtitle = page.getByTestId("mobile-hud").locator("span", { hasText: "Phil Lopez" }).first();
     const subtitleSize = await subtitle.evaluate(
       (node) => parseFloat(window.getComputedStyle(node).fontSize) || 0,
     );
@@ -640,7 +794,6 @@ test.describe("Phase 4.3 - default camera fit", () => {
     expect(result!.total).toBeGreaterThanOrEqual(11);
     if (result!.inside !== result!.total) {
       // Surface diagnostics so it's easy to see why a city is out of frame.
-      // eslint-disable-next-line no-console
       console.log(JSON.stringify(result, null, 2));
     }
     expect(result!.inside).toBe(result!.total);

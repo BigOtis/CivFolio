@@ -57,7 +57,7 @@ const initialCamera: CameraState = {
   y: 30,
 };
 
-const INTRO_DISMISSED_KEY = "project-empire:intro-dismissed:v1";
+const INTRO_DISMISSED_KEY = "project-empire:intro-dismissed:v2";
 
 function markIntroDismissed() {
   if (typeof window === "undefined") {
@@ -1567,7 +1567,6 @@ export function WorldExplorer({
       if (introIndex >= introSequence.length - 1) {
         setSelectedYear(latestYear);
         setCameraTarget(defaultCamera);
-        markIntroDismissed();
         setIntroActive(false);
         return;
       }

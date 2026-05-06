@@ -20,7 +20,14 @@ for (const view of VIEWS) {
     await page.goto("/", { waitUntil: "networkidle" });
     await page.waitForFunction(() => Boolean(window.__CIVFOLIO_MAP_TEST__));
     if ((await page.getByTestId("intro-panel").count()) > 0) {
-      await page.getByRole("button", { name: "Skip Intro" }).click({ force: true });
+      await page.evaluate(() => {
+        const button = Array.from(document.querySelectorAll("button")).find(
+          (entry) => entry.textContent?.trim() === "Skip Intro",
+        );
+        if (button instanceof HTMLButtonElement) {
+          button.click();
+        }
+      });
       await expect(page.getByTestId("intro-panel")).toHaveCount(0);
     }
     await page.waitForFunction(

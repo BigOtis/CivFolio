@@ -1328,6 +1328,7 @@ export function WorldMapPixi({
   const renderClockRef = useRef(0);
   const syncingCameraRef = useRef(false);
   const pointerDebugRef = useRef({ down: 0, move: 0, up: 0, dragging: false });
+  const lastMapCityOpenRef = useRef<{ slug: string; at: number } | null>(null);
   const [sceneVersion, setSceneVersion] = useState(0);
   const staticWorldSignature = useMemo(
     () => `${world.width}x${world.height}:${world.hexes.length}`,
@@ -1582,6 +1583,17 @@ export function WorldMapPixi({
     let wheelHandler: (() => void) | null = null;
     let resizeObserver: ResizeObserver | null = null;
     let pressStart: { x: number; y: number } | null = null;
+    const activeTouchPointers = new Map<number, { clientX: number; clientY: number }>();
+    let pinchGesture:
+      | {
+          startDistance: number;
+          startScale: number;
+          centerClientX: number;
+          centerClientY: number;
+          worldAnchor: { x: number; y: number };
+        }
+      | null = null;
+    let touchGestureWasPinch = false;
     let dragPointer:
       | {
           id: number;
@@ -1788,6 +1800,80 @@ export function WorldMapPixi({
           viewport.y = next.y;
           movedHandler?.();
         };
+        const getTouchPair = () => {
+          const touches = Array.from(activeTouchPointers.values());
+          if (touches.length < 2) {
+            return null;
+          }
+          return [touches[0], touches[1]] as const;
+        };
+        const getPinchDistance = (pair: readonly [{ clientX: number; clientY: number }, { clientX: number; clientY: number }]) =>
+          Math.max(1, Math.hypot(pair[0].clientX - pair[1].clientX, pair[0].clientY - pair[1].clientY));
+        const getPinchCenter = (pair: readonly [{ clientX: number; clientY: number }, { clientX: number; clientY: number }]) => ({
+          clientX: (pair[0].clientX + pair[1].clientX) / 2,
+          clientY: (pair[0].clientY + pair[1].clientY) / 2,
+        });
+        const startPinchGesture = () => {
+          const pair = getTouchPair();
+          if (!pair) {
+            return;
+          }
+
+          const hostRect = host.getBoundingClientRect();
+          const center = getPinchCenter(pair);
+          pinchGesture = {
+            startDistance: getPinchDistance(pair),
+            startScale: viewport.scale.x,
+            centerClientX: center.clientX,
+            centerClientY: center.clientY,
+            worldAnchor: viewport.toWorld(center.clientX - hostRect.left, center.clientY - hostRect.top),
+          };
+          touchGestureWasPinch = true;
+          dragPointer = null;
+          pressStart = null;
+          callbacksRef.current.onDragStateChange(false);
+          pointerDebugRef.current = {
+            ...pointerDebugRef.current,
+            dragging: false,
+          };
+        };
+        const applyPinchGesture = () => {
+          const pair = getTouchPair();
+          if (!pair || !pinchGesture) {
+            return;
+          }
+
+          const center = getPinchCenter(pair);
+          const hostRect = host.getBoundingClientRect();
+          const localX = center.clientX - hostRect.left;
+          const localY = center.clientY - hostRect.top;
+          const scale = clamp(
+            pinchGesture.startScale * (getPinchDistance(pair) / pinchGesture.startDistance),
+            CAMERA_ZOOM_LIMITS.min,
+            CAMERA_ZOOM_LIMITS.max,
+          );
+          const next = clampViewportPosition(
+            localX - pinchGesture.worldAnchor.x * scale,
+            localY - pinchGesture.worldAnchor.y * scale,
+            scale,
+            { width: host.clientWidth, height: host.clientHeight },
+            { width: staticWorldWidth, height: staticWorldHeight },
+          );
+
+          viewport.scale.set(scale);
+          viewport.x = next.x;
+          viewport.y = next.y;
+          movedHandler?.();
+        };
+        const openMapCity = (slug: string) => {
+          const now = Date.now();
+          const lastMapCityOpen = lastMapCityOpenRef.current;
+          if (lastMapCityOpen && lastMapCityOpen.slug === slug && now - lastMapCityOpen.at < 300) {
+            return;
+          }
+          lastMapCityOpenRef.current = { slug, at: now };
+          callbacksRef.current.onOpenWork(slug);
+        };
         pointerDownHandler = (event) => {
           if (event.pointerType === "mouse" || event.button !== 0) {
             return;
@@ -1799,6 +1885,18 @@ export function WorldMapPixi({
             ...pointerDebugRef.current,
             down: pointerDebugRef.current.down + 1,
           };
+          if (event.pointerType === "touch") {
+            activeTouchPointers.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
+            if (activeTouchPointers.size >= 2) {
+              startPinchGesture();
+              callbacksRef.current.onStopIntro();
+              callbacksRef.current.onClearSelectedUnit();
+              try {
+                host.setPointerCapture(event.pointerId);
+              } catch {}
+              return;
+            }
+          }
           pressStart = { x: event.clientX, y: event.clientY };
           dragPointer = {
             id: event.pointerId,
@@ -1815,6 +1913,17 @@ export function WorldMapPixi({
           callbacksRef.current.onClearSelectedUnit();
         };
         pointerMoveHandler = (event) => {
+          if (event.pointerType === "touch" && activeTouchPointers.has(event.pointerId)) {
+            activeTouchPointers.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
+            if (pinchGesture && activeTouchPointers.size >= 2) {
+              pointerDebugRef.current = {
+                ...pointerDebugRef.current,
+                move: pointerDebugRef.current.move + 1,
+              };
+              applyPinchGesture();
+              return;
+            }
+          }
           if (!dragPointer || event.pointerId !== dragPointer.id) {
             return;
           }
@@ -1846,6 +1955,9 @@ export function WorldMapPixi({
             up: pointerDebugRef.current.up + 1,
             dragging: false,
           };
+          if (event.pointerType === "touch") {
+            activeTouchPointers.delete(event.pointerId);
+          }
           const pointer = dragPointer;
           dragPointer = null;
           callbacksRef.current.onDragStateChange(false);
@@ -1856,6 +1968,15 @@ export function WorldMapPixi({
           const hostRect = host.getBoundingClientRect();
           const start = pressStart;
           pressStart = null;
+          if (pinchGesture || touchGestureWasPinch) {
+            if (activeTouchPointers.size < 2) {
+              pinchGesture = null;
+            }
+            if (activeTouchPointers.size === 0) {
+              touchGestureWasPinch = false;
+            }
+            return;
+          }
           if (!start) {
             return;
           }
@@ -1881,7 +2002,7 @@ export function WorldMapPixi({
             .sort((a, b) => a.distance - b.distance)[0];
 
           if (cityHit) {
-            callbacksRef.current.onOpenWork(cityHit.slug);
+            openMapCity(cityHit.slug);
             return;
           }
 
@@ -1947,8 +2068,13 @@ export function WorldMapPixi({
           callbacksRef.current.onBackgroundClick();
         };
         pointerCancelHandler = (event) => {
+          if (event.pointerType === "touch") {
+            activeTouchPointers.delete(event.pointerId);
+          }
           dragPointer = null;
           pressStart = null;
+          pinchGesture = null;
+          touchGestureWasPinch = activeTouchPointers.size > 0;
           callbacksRef.current.onDragStateChange(false);
           pointerDebugRef.current = {
             ...pointerDebugRef.current,
@@ -2037,7 +2163,7 @@ export function WorldMapPixi({
             .sort((a, b) => a.distance - b.distance)[0];
 
           if (cityHit) {
-            callbacksRef.current.onOpenWork(cityHit.slug);
+            openMapCity(cityHit.slug);
             return;
           }
 
@@ -2328,6 +2454,12 @@ export function WorldMapPixi({
       hitArea.hitArea = new Circle(0, 0, city.radius + 28);
       hitArea.on("pointertap", (event) => {
         event.stopPropagation();
+        const now = Date.now();
+        const lastMapCityOpen = lastMapCityOpenRef.current;
+        if (lastMapCityOpen && lastMapCityOpen.slug === city.slug && now - lastMapCityOpen.at < 300) {
+          return;
+        }
+        lastMapCityOpenRef.current = { slug: city.slug, at: now };
         callbacksRef.current.onOpenWork(city.slug);
       });
       hitArea.on("pointerenter", () => callbacksRef.current.onSetHoveredCity(city.slug));

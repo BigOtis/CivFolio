@@ -6,7 +6,7 @@ describe("content loading", () => {
   it("loads Phil's portfolio content and validates the configured work facets", async () => {
     const data = await getWorldData();
 
-    expect(data.site.title).toBe("Phil Lopez");
+    expect(data.site.title).toBe("Project Empire");
     expect(data.works).toHaveLength(11);
     expect(data.works.some((work) => work.code)).toBe(true);
     expect(data.works.some((work) => work.art)).toBe(true);
