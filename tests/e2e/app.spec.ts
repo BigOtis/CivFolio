@@ -434,6 +434,8 @@ test.describe("world map interactions", () => {
     );
     await expect(page.getByText("Why it matters")).toBeVisible();
     await expect(page.getByText("Future-Tech Beacon")).toBeVisible();
+    await expect(page.getByTestId("city-popup")).toHaveClass(/duration-150/);
+    await expect(page.getByTestId("city-popup")).not.toHaveClass(/blur-\[/);
 
     await page.getByRole("button", { name: "Close" }).click();
     await expect(page).not.toHaveURL(/work=/);
@@ -498,6 +500,27 @@ test.describe("world map interactions", () => {
     expect(debug?.layerOrder?.greatWorkLabels ?? Number.NEGATIVE_INFINITY).toBeGreaterThan(
       debug?.layerOrder?.cities ?? Number.POSITIVE_INFINITY,
     );
+  });
+
+  test("selecting a city does not fade unrelated great-work monuments", async ({ page }) => {
+    await openWorldMap(page);
+
+    await skipIntro(page);
+    const before = await page.evaluate(() => window.__CIVFOLIO_MAP_TEST__?.getDebug().greatWorks ?? []);
+    expect(before.length).toBeGreaterThan(0);
+
+    await page.evaluate(() => window.__CIVFOLIO_MAP_TEST__?.openCity("robot-future"));
+    await expect(page.getByTestId("city-popup-body")).toBeVisible();
+
+    const after = await page.evaluate(() => window.__CIVFOLIO_MAP_TEST__?.getDebug().greatWorks ?? []);
+    const beforeByKey = new Map(before.map((item) => [item.key, item]));
+    const unrelated = after.filter((item) => item.citySlug !== "robot-future");
+    expect(unrelated.length).toBeGreaterThan(0);
+    for (const item of unrelated) {
+      const previous = beforeByKey.get(item.key);
+      expect(previous).toBeTruthy();
+      expect(item.alpha).toBeCloseTo(previous!.alpha, 3);
+    }
   });
 
   test("Project Empire and Buster's TD cities stay visually separated", async ({ page }) => {

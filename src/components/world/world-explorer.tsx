@@ -904,11 +904,11 @@ export function WorldExplorer({
   const legendPanelVisible = usePresence(showLegend, 220);
   const creatorPromptVisible = usePresence(showCreatorPrompt, 220);
   const commandBriefVisible = usePresence(!selectedWork && !showLeader && !isTablet && !isShort, 220);
-  const selectedWorkPanel = useRetainedPresence(selectedWorkVisible ? selectedWork ?? null : null, Boolean(selectedWork && selectedWorkVisible), 240);
+  const selectedWorkPanel = useRetainedPresence(selectedWorkVisible ? selectedWork ?? null : null, Boolean(selectedWork && selectedWorkVisible), 150);
   const hiddenWorkPanel = useRetainedPresence(
     !selectedWorkVisible ? selectedWork ?? null : null,
     Boolean(selectedWork && !selectedWorkVisible),
-    240,
+    150,
   );
   const selectedPanelCity = selectedWorkPanel.retained
     ? world.states[selectedYear].cities.find((city) => city.slug === selectedWorkPanel.retained?.slug) ?? selectedCity
@@ -2862,13 +2862,13 @@ export function WorldExplorer({
             data-testid="city-popup"
             data-sheet-state={isCompact ? sheetState : "desktop"}
             className={cn(
-              "panel-enter absolute z-30 flex flex-col overflow-hidden border border-[rgba(244,211,141,0.18)] bg-[rgba(16,11,9,0.86)] shadow-[0_28px_90px_rgba(0,0,0,0.42)] backdrop-blur-xl transition-[opacity,transform,filter,height] duration-240 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform",
+              "panel-enter absolute z-30 flex flex-col overflow-hidden border border-[rgba(244,211,141,0.18)] bg-[rgba(16,11,9,0.86)] shadow-[0_28px_90px_rgba(0,0,0,0.42)] backdrop-blur-xl transition-[opacity,transform,height] duration-150 ease-out will-change-transform",
               isCompact
                 ? "bottom-0 left-0 right-0 top-auto rounded-t-[22px] pb-[env(safe-area-inset-bottom)]"
                 : "bottom-4 right-4 top-28 w-[min(440px,calc(100%-2rem))] rounded-[30px] lg:right-6 lg:top-24",
               selectedWork && selectedWorkVisible
-                ? "pointer-events-auto opacity-100 translate-x-0 scale-100 blur-0"
-                : "pointer-events-none opacity-0 translate-x-4 scale-[0.985] blur-[2px]",
+                ? "pointer-events-auto opacity-100 translate-x-0 scale-100"
+                : "pointer-events-none opacity-0 translate-x-2 scale-[0.992]",
             )}
             style={
               isCompact
@@ -2928,15 +2928,15 @@ export function WorldExplorer({
             data-map-interactive="true"
             data-testid="hidden-work-panel"
             className={cn(
-              "panel-enter absolute z-30 rounded-[30px] border border-[rgba(244,211,141,0.18)] bg-[rgba(16,11,9,0.86)] p-6 shadow-[0_28px_90px_rgba(0,0,0,0.42)] backdrop-blur-xl transition-[opacity,transform,filter] duration-240 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform",
+              "panel-enter absolute z-30 rounded-[30px] border border-[rgba(244,211,141,0.18)] bg-[rgba(16,11,9,0.86)] p-6 shadow-[0_28px_90px_rgba(0,0,0,0.42)] backdrop-blur-xl transition-[opacity,transform] duration-150 ease-out will-change-transform",
               isMobile
                 ? mobileHudHeight > 0
                   ? "left-2 right-2 rounded-[22px] p-4"
                   : "left-2 right-2 top-28 rounded-[22px] p-4"
                 : "right-4 top-28 w-[min(440px,calc(100%-2rem))]",
               selectedWork && !selectedWorkVisible
-                ? "pointer-events-auto opacity-100 translate-x-0 scale-100 blur-0"
-                : "pointer-events-none opacity-0 translate-x-4 scale-[0.985] blur-[2px]",
+                ? "pointer-events-auto opacity-100 translate-x-0 scale-100"
+                : "pointer-events-none opacity-0 translate-x-2 scale-[0.992]",
             )}
             style={
               isMobile && mobileHudHeight > 0

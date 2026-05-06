@@ -248,6 +248,7 @@ declare global {
         camera: { x: number; y: number; zoom: number } | null;
         pointer: { down: number; move: number; up: number; dragging: boolean };
         cities: Array<{ slug: string; x: number; y: number; radius: number }>;
+        greatWorks: Array<{ key: string; citySlug: string; alpha: number }>;
         viewport: { width: number; height: number } | null;
         explorer: ExplorerDebugSnapshot | null;
       };
@@ -303,8 +304,8 @@ function drawRoundedLabel(background: Graphics, width: number, tone: string) {
   background
     .clear()
     .roundRect(0, 0, width, 28, 14)
-    .fill({ color: 0x19100b, alpha: 0.78 })
-    .stroke({ width: 1.2, color: toPixiColor(tone), alpha: 0.84 });
+    .fill({ color: 0x19100b, alpha: 0.86 })
+    .stroke({ width: 1.35, color: toPixiColor(tone), alpha: 0.94 });
 }
 
 function createBanner(title: string, tone: string) {
@@ -676,16 +677,16 @@ function drawCityGlyph(graphic: Graphics, city: RenderCity, active: boolean) {
   const stability = clamp(city.metrics.stability / 10, 0, 1);
   const leftBias = ((seed >> 2) % 4) - 1.5;
   const rightBias = ((seed >> 5) % 4) - 1.5;
-  const glowAlpha = active ? 0.36 : 0.18;
+  const glowAlpha = active ? 0.4 : 0.27;
   const baseRadius = city.radius + (city.level === "wonder" ? 14 : 8);
-  const wall = mixColor(stone.dark, 0x382f29, age * 0.28);
-  const wallLight = mixColor(stone.mid, 0xb6a68a, (1 - age) * 0.1);
-  const wallBright = mixColor(stone.light, 0xd3c2a5, (1 - age) * 0.12);
+  const wall = mixColor(mixColor(stone.dark, stone.mid, active ? 0.3 : 0.22), 0x382f29, age * 0.14);
+  const wallLight = mixColor(stone.mid, 0xcbb994, active ? 0.22 : 0.17);
+  const wallBright = mixColor(stone.light, 0xf0dbac, active ? 0.22 : 0.17);
   const roofBase = city.level === "wonder" ? 0xcdb374 : city.level === "capital" ? 0xb28a63 : 0xa57a58;
-  const roof = mixColor(roofBase, 0x6d675f, age * 0.24);
+  const roof = mixColor(roofBase, 0x6d675f, age * 0.12);
   const windowTone = 0xf5ddb4;
-  const trim = active ? 0xf0c980 : wallBright;
-  const districtTint = mixColor(tone, wallBright, 0.56);
+  const trim = active ? 0xf0c980 : mixColor(wallBright, accent, 0.16);
+  const districtTint = mixColor(tone, wallBright, 0.46);
   const gate = 0x241710;
   const leftTowerHeight = 12 + Math.round(prestige * 4 + age * 2 + leftBias);
   const rightTowerHeight = 12 + Math.round(stability * 4 + age * 2 + rightBias);
@@ -695,11 +696,11 @@ function drawCityGlyph(graphic: Graphics, city: RenderCity, active: boolean) {
   const towerSpread = profile.towerSpread;
 
   graphic.clear();
-  graphic.circle(0, 0, city.radius + 20).fill({ color: tone, alpha: active ? 0.18 : 0.1 });
-  graphic.circle(0, -4, city.radius + 13).fill({ color: accent, alpha: active ? 0.14 : 0.07 });
+  graphic.circle(0, 0, city.radius + 20).fill({ color: tone, alpha: active ? 0.2 : 0.14 });
+  graphic.circle(0, -4, city.radius + 13).fill({ color: accent, alpha: active ? 0.16 : 0.11 });
   graphic.ellipse(0, baseRadius * 0.68, city.radius + 13, 9).fill({ color: 0x070403, alpha: 0.34 });
   graphic.ellipse(0, baseRadius * 0.52, city.radius + 11, 13).fill({ color: accent, alpha: glowAlpha });
-  graphic.ellipse(0, baseRadius * 0.4, city.radius + 16, 7).fill({ color: tone, alpha: active ? 0.2 : 0.1 });
+  graphic.ellipse(0, baseRadius * 0.4, city.radius + 16, 7).fill({ color: tone, alpha: active ? 0.23 : 0.15 });
   graphic.roundRect(-(city.radius + 9), city.radius * 0.15, (city.radius + 9) * 2, 6, 3).fill({ color: 0x211711, alpha: 0.46 });
 
   if (city.level === "settlement") {
@@ -1551,6 +1552,13 @@ export function WorldMapPixi({
                 x: node.worldX,
                 y: node.worldY,
                 radius: node.radius,
+              }))
+            : [],
+          greatWorks: sceneRef.current
+            ? Array.from(sceneRef.current.greatWorkNodes.entries()).map(([key, node]) => ({
+                key,
+                citySlug: node.citySlug,
+                alpha: node.root.alpha,
               }))
             : [],
           viewport: viewportRef.current
@@ -2426,7 +2434,7 @@ export function WorldMapPixi({
           label.visible = hoveredGreatWorkRef.current === key;
           label.eventMode = "none";
 
-          root.alpha = hoveredGreatWorkRef.current === key ? 1 : selectedSlugRef.current && selectedSlugRef.current !== city.slug ? 0.5 : 0.82;
+          root.alpha = hoveredGreatWorkRef.current === key ? 1 : 0.82;
           root.on("pointerenter", () => callbacksRef.current.onSetHoveredGreatWork(key));
           root.on("pointerleave", () => callbacksRef.current.onSetHoveredGreatWork(null));
 
@@ -2570,7 +2578,7 @@ export function WorldMapPixi({
 
       const active = slug === selectedSlug || slug === introFocusSlug || slug === hoveredCity;
       drawCityGlyph(node.halo, city, active);
-      node.label.alpha = slug === selectedSlug || slug === introFocusSlug ? 1 : active ? 0.96 : 0.9;
+      node.label.alpha = slug === selectedSlug || slug === introFocusSlug ? 1 : active ? 0.98 : 0.96;
     });
 
     scene.greatWorkNodes.forEach((node, key) => {
@@ -2581,7 +2589,7 @@ export function WorldMapPixi({
 
       const active = key === hoveredGreatWork;
       drawGreatWorkMonument(node.monument, city, node.title, active);
-      node.root.alpha = active ? 1 : selectedSlug && selectedSlug !== node.citySlug ? 0.5 : 0.82;
+      node.root.alpha = active ? 1 : 0.82;
       node.label.visible = active;
       node.label.alpha = active ? 1 : 0;
     });
