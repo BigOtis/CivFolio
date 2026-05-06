@@ -8,7 +8,7 @@ const INTRO_TITLES = [
   "Founding Character Chat",
   "Founding IBM AI and Machine Learning Engineer",
   "Founding Robot Future",
-  "Founding CivFolio",
+  "Founding Project Empire",
   "Founding Polylogue",
   "Founding OtisFuse",
 ] as const;
@@ -438,7 +438,7 @@ test.describe("world map interactions", () => {
     );
   });
 
-  test("CivFolio and Buster's TD cities stay visually separated", async ({ page }) => {
+  test("Project Empire and Buster's TD cities stay visually separated", async ({ page }) => {
     await openWorldMap(page);
 
     await skipIntro(page);
@@ -728,7 +728,7 @@ test.describe("world map interactions", () => {
     const prompt = page.getByTestId("creator-prompt");
     await expect(prompt).toBeVisible();
     await expect(prompt).toContainText("Enjoy what you're seeing here? Want to create your own?");
-    await expect(prompt.getByRole("link", { name: "CivFolio README" })).toHaveAttribute(
+    await expect(prompt.getByRole("link", { name: "Project Empire README" })).toHaveAttribute(
       "href",
       "https://github.com/BigOtis/CivFolio",
     );
@@ -1170,7 +1170,7 @@ test.describe("canonical routes", () => {
       "href",
       "https://www.robot-future.com/",
     );
-    await expect(page.getByRole("link", { name: "CivFolio source" })).toHaveAttribute(
+    await expect(page.getByRole("link", { name: "Project Empire source" })).toHaveAttribute(
       "href",
       "https://github.com/BigOtis/CivFolio",
     );

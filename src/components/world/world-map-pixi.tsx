@@ -2464,5 +2464,5 @@ export function WorldMapPixi({
     updateVisibility(scene, viewport, selectedSlug, hoveredCity);
   }, [hoveredCity, hoveredGreatWork, introFocusSlug, selectedSlug, selectedUnitId, visibleCities]);
 
-  return <div ref={hostRef} className="absolute inset-0 h-full w-full" role="img" aria-label="CivFolio world map" />;
+  return <div ref={hostRef} className="absolute inset-0 h-full w-full" role="img" aria-label="Project Empire world map" />;
 }

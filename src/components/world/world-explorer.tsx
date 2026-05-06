@@ -57,7 +57,7 @@ const initialCamera: CameraState = {
   y: 30,
 };
 
-const INTRO_DISMISSED_KEY = "civfolio:intro-dismissed:v1";
+const INTRO_DISMISSED_KEY = "project-empire:intro-dismissed:v1";
 
 function markIntroDismissed() {
   if (typeof window === "undefined") {
@@ -2593,7 +2593,7 @@ export function WorldExplorer({
               rel="noreferrer"
               className="mt-4 inline-flex rounded-full border border-[var(--accent)] bg-[rgba(244,211,141,0.08)] px-4 py-2 text-[11px] uppercase tracking-[0.24em] text-[var(--accent-strong)] transition hover:bg-[rgba(244,211,141,0.16)]"
             >
-              CivFolio README
+              Project Empire README
             </a>
           </div>
         ) : null}

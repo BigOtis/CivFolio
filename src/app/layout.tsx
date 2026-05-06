@@ -14,7 +14,7 @@ const bodyFont = Source_Sans_3({
 });
 
 export const metadata: Metadata = {
-  title: "CivFolio",
+  title: "Project Empire",
   description: "Open-source strategy-map portfolio starter for self-hosted creative worlds.",
 };
 

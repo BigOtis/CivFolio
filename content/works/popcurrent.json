@@ -6,7 +6,7 @@
   "description": [
     "PopCurrent is one of Phil's clearest public AI publishing products: a trend-focused news surface designed for fast editorial packaging, social distribution, and attention-aware story framing.",
     "The live site positions itself around trending stories, viral content, and breaking internet culture. Phil also used it as an experimental publishing engine for Reddit-native sci-fi storytelling campaigns, including The Gifts of Stillness and the later Stillness Rejected and Loranthi reveal threads.",
-    "The codebase lives in a private repository, so CivFolio treats GitHub metadata as optional enrichment and presents PopCurrent primarily through its public product surface and outcomes."
+    "The codebase lives in a private repository, so Project Empire treats GitHub metadata as optional enrichment and presents PopCurrent primarily through its public product surface and outcomes."
   ],
   "importance": 88,
   "status": "active",

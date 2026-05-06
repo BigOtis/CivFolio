@@ -1,10 +1,10 @@
-# CivFolio
+# Project Empire
 
 ```text
 Claude/Codex starter prompt: Use https://github.com/BigOtis/CivFolio as the base for my own map-based portfolio or personal world. Start by asking me for my resume, bio, social links, headshot, featured projects/works, screenshots, timeline, preferred tone, and deployment target. Then replace the seeded content in content/leader.json, content/site.json, content/works/*.json, content/timeline/snapshots.json, and public/assets/*, adapt the map/city theme to my work, and prepare it to deploy from GitHub.
 ```
 
-CivFolio is an MIT-licensed, self-hosted, file-backed portfolio starter that turns your resume, projects, creative work, or media archive into a living 4X-inspired strategy map.
+Project Empire is an MIT-licensed, self-hosted, file-backed portfolio starter that turns your resume, projects, creative work, or media archive into a living 4X-inspired strategy map.
 
 It is built for developers, artists, musicians, writers, video creators, editors, consultants, and hybrid builders who want a portfolio that feels authored instead of interchangeable. There is no database and no hosted backend. Everything lives in versioned files inside the repo.
 

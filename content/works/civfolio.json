@@ -1,10 +1,10 @@
 {
   "slug": "civfolio",
-  "title": "CivFolio",
+  "title": "Project Empire",
   "discipline": "code",
   "summary": "The strategy-map resume site and open-source portfolio framework that turns project history into a living world.",
   "description": [
-    "CivFolio is the meta-city in the empire: the portfolio framework itself. It takes Phil's own body of work and renders it as a 4X-inspired world map, with projects as cities, Great Works as landmarks, and growth over time as a campaign.",
+    "Project Empire is the meta-city in the empire: the portfolio framework itself. It takes Phil's own body of work and renders it as a 4X-inspired world map, with projects as cities, Great Works as landmarks, and growth over time as a campaign.",
     "It is intentionally both a personal artifact and a reusable open-source starter. That makes it part demo, part framework, and part statement about how software portfolios can feel authored instead of interchangeable."
   ],
   "importance": 88,
@@ -24,13 +24,13 @@
     {
       "kind": "image",
       "src": "/assets/works/civfolio-shot.png",
-      "alt": "The CivFolio world map with the CivFolio city management view open.",
-      "caption": "The live CivFolio map acting as its own city-management screen."
+      "alt": "The Project Empire world map with the Project Empire city management view open.",
+      "caption": "The live Project Empire map acting as its own city-management screen."
     },
     {
       "kind": "image",
       "src": "/assets/works/civfolio.svg",
-      "alt": "A stylized world-map city representing the CivFolio framework.",
+      "alt": "A stylized world-map city representing the Project Empire framework.",
       "caption": "A self-referential city where the portfolio becomes the framework."
     }
   ],

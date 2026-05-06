@@ -119,8 +119,8 @@ export default async function AboutPage() {
             Attribution
           </div>
           <p className="mt-3 max-w-3xl">
-            CivFolio is a Robot Future project. Keep this attribution with the site so visitors can
-            trace the portfolio back to the main Robot Future home and the public CivFolio source.
+            Project Empire is a Robot Future project. Keep this attribution with the site so visitors can
+            trace the portfolio back to the main Robot Future home and the public Project Empire source.
           </p>
           <div className="mt-4 flex flex-wrap gap-3">
             <a
@@ -137,7 +137,7 @@ export default async function AboutPage() {
               rel="noreferrer"
               className="rounded-full border border-[var(--accent)] bg-[rgba(244,211,141,0.08)] px-4 py-2 text-sm text-[var(--accent-strong)] transition hover:bg-[rgba(244,211,141,0.16)]"
             >
-              CivFolio source
+              Project Empire source
             </a>
           </div>
         </section>

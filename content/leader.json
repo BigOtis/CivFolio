@@ -2,7 +2,7 @@
   "name": "Phil Lopez",
   "headline": "Leader of a builder civilization spanning shipped games, public websites, AI experiments, and product-minded engineering.",
   "currentRole": "IBM AI and Machine Learning Engineer",
-  "summary": "Phil Lopez is a builder who likes turning side ideas into real internet artifacts: websites, AI products, portfolio frameworks, and games that people can actually play. Outside IBM, a lot of the energy goes into public-world projects like Robot Future, PopCurrent, SlopSwapper, and CivFolio, plus long-running Unreal Engine work such as Buster's TD and LocalTalker. That mix of product instinct, front-end execution, storytelling, and systems thinking is the center of the profile. IBM is still an important part of the arc, but the broader story is about shipping things under his own banner, making them public, and building a body of work that spans code, design, writing, and game development.",
+  "summary": "Phil Lopez is a builder who likes turning side ideas into real internet artifacts: websites, AI products, portfolio frameworks, and games that people can actually play. Outside IBM, a lot of the energy goes into public-world projects like Robot Future, PopCurrent, SlopSwapper, and Project Empire, plus long-running Unreal Engine work such as Buster's TD and LocalTalker. That mix of product instinct, front-end execution, storytelling, and systems thinking is the center of the profile. IBM is still an important part of the arc, but the broader story is about shipping things under his own banner, making them public, and building a body of work that spans code, design, writing, and game development.",
   "philosophy": [
     "Build real systems that increase the output of the people using them.",
     "Use AI to remove repetitive labor so human attention can move up the stack.",
@@ -25,7 +25,7 @@
   ],
   "contactLinks": [
     { "label": "Email", "url": "mailto:phil.lopezdev@gmail.com" },
-    { "label": "CivFolio Repo", "url": "https://github.com/BigOtis/CivFolio" },
+    { "label": "Project Empire Repo", "url": "https://github.com/BigOtis/CivFolio" },
     { "label": "GitHub", "url": "https://github.com/BigOtis" },
     { "label": "LinkedIn", "url": "https://www.linkedin.com/in/phil-lopez-84577b64/" },
     { "label": "Robot Future", "url": "https://www.robot-future.com/" }

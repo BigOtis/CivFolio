@@ -199,7 +199,7 @@ test.describe("intro dismissal persistence", () => {
     await expect(page.getByTestId("intro-panel")).toHaveCount(0);
 
     const storedBefore = await page.evaluate(() =>
-      window.localStorage.getItem("civfolio:intro-dismissed:v1"),
+      window.localStorage.getItem("project-empire:intro-dismissed:v1"),
     );
     expect(storedBefore).toBe("1");
 
@@ -222,7 +222,7 @@ test.describe("intro dismissal persistence", () => {
     await expect(page.getByTestId("intro-panel")).toBeVisible();
 
     const storedAfterReplay = await page.evaluate(() =>
-      window.localStorage.getItem("civfolio:intro-dismissed:v1"),
+      window.localStorage.getItem("project-empire:intro-dismissed:v1"),
     );
     expect(storedAfterReplay).toBeNull();
   });
