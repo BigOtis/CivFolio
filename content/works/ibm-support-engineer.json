@@ -4,9 +4,9 @@
   "discipline": "client",
   "summary": "Seven years on IBM z/OS support tools: modernizing mainframe debugging, building WebIPCS, and handling SEV1 production incidents under real customer pressure.",
   "description": [
-    "This city represents Phil's z/OS support tools chapter: the place where customer pressure, low-level debugging, and product-minded tooling all collided. The job was not just fixing issues after they happened; it was changing how hard problems could be investigated the next time.",
+    "Phil spent seven years in z/OS support tools at IBM, working where customer pressure, low-level debugging, and product-minded tooling all collided. The job was not just fixing issues after they happened; it was changing how hard problems could be investigated the next time.",
     "The flagship project was WebIPCS, a modern React interface over IBM's classic green-screen IPCS dump debugger. It added visualizations, graphs, structured navigation, and a smoother debugging experience while preserving backward compatibility with the existing IPCS command ecosystem.",
-    "The arc widened into Analysis on Arrival and pyipcs: Python-driven dump analysis, automated artifact generation, and more accessible tooling for z/OS experts who needed faster paths from massive system dumps to useful evidence."
+    "That work grew into Analysis on Arrival and pyipcs: Python-driven dump analysis, automated artifact generation, and more accessible tooling for z/OS experts who needed faster paths from massive system dumps to useful evidence."
   ],
   "importance": 86,
   "status": "active",

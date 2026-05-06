@@ -677,13 +677,13 @@ function drawCityGlyph(graphic: Graphics, city: RenderCity, active: boolean) {
   const stability = clamp(city.metrics.stability / 10, 0, 1);
   const leftBias = ((seed >> 2) % 4) - 1.5;
   const rightBias = ((seed >> 5) % 4) - 1.5;
-  const glowAlpha = active ? 0.4 : 0.27;
+  const glowAlpha = active ? 0.46 : 0.36;
   const baseRadius = city.radius + (city.level === "wonder" ? 14 : 8);
-  const wall = mixColor(mixColor(stone.dark, stone.mid, active ? 0.3 : 0.22), 0x382f29, age * 0.14);
-  const wallLight = mixColor(stone.mid, 0xcbb994, active ? 0.22 : 0.17);
-  const wallBright = mixColor(stone.light, 0xf0dbac, active ? 0.22 : 0.17);
+  const wall = mixColor(mixColor(stone.dark, stone.mid, active ? 0.38 : 0.32), 0x382f29, age * 0.08);
+  const wallLight = mixColor(stone.mid, 0xd8c79d, active ? 0.3 : 0.25);
+  const wallBright = mixColor(stone.light, 0xf6e3b8, active ? 0.3 : 0.25);
   const roofBase = city.level === "wonder" ? 0xcdb374 : city.level === "capital" ? 0xb28a63 : 0xa57a58;
-  const roof = mixColor(roofBase, 0x6d675f, age * 0.12);
+  const roof = mixColor(roofBase, 0x6d675f, age * 0.07);
   const windowTone = 0xf5ddb4;
   const trim = active ? 0xf0c980 : mixColor(wallBright, accent, 0.16);
   const districtTint = mixColor(tone, wallBright, 0.46);
@@ -696,12 +696,15 @@ function drawCityGlyph(graphic: Graphics, city: RenderCity, active: boolean) {
   const towerSpread = profile.towerSpread;
 
   graphic.clear();
-  graphic.circle(0, 0, city.radius + 20).fill({ color: tone, alpha: active ? 0.2 : 0.14 });
-  graphic.circle(0, -4, city.radius + 13).fill({ color: accent, alpha: active ? 0.16 : 0.11 });
-  graphic.ellipse(0, baseRadius * 0.68, city.radius + 13, 9).fill({ color: 0x070403, alpha: 0.34 });
+  graphic.circle(0, 0, city.radius + 20).fill({ color: tone, alpha: active ? 0.24 : 0.18 });
+  graphic.circle(0, -4, city.radius + 13).fill({ color: accent, alpha: active ? 0.2 : 0.15 });
+  graphic.ellipse(0, baseRadius * 0.68, city.radius + 14, 9.5).fill({ color: 0x070403, alpha: 0.36 });
   graphic.ellipse(0, baseRadius * 0.52, city.radius + 11, 13).fill({ color: accent, alpha: glowAlpha });
-  graphic.ellipse(0, baseRadius * 0.4, city.radius + 16, 7).fill({ color: tone, alpha: active ? 0.23 : 0.15 });
-  graphic.roundRect(-(city.radius + 9), city.radius * 0.15, (city.radius + 9) * 2, 6, 3).fill({ color: 0x211711, alpha: 0.46 });
+  graphic.ellipse(0, baseRadius * 0.4, city.radius + 16, 7).fill({ color: tone, alpha: active ? 0.28 : 0.21 });
+  graphic
+    .roundRect(-(city.radius + 10), city.radius * 0.15, (city.radius + 10) * 2, 6.8, 3.4)
+    .fill({ color: 0x211711, alpha: 0.58 })
+    .stroke({ width: active ? 1.5 : 1.2, color: trim, alpha: active ? 0.72 : 0.58 });
 
   if (city.level === "settlement") {
     graphic.roundRect(-18, -2, 36, 10, 3).fill({ color: wall, alpha: 1 }).stroke({ width: 1, color: trim, alpha: 0.52 });

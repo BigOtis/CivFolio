@@ -4,8 +4,8 @@
   "discipline": "code",
   "summary": "An intuitive ChatGPT interface for talking with fictional and historical characters.",
   "description": [
-    "Character Chat appears in Phil's resume as one of his early OpenAI-driven web products. It focuses less on infrastructure than on interaction design, prompt experience, and making AI chat feel immediately playful and understandable.",
-    "Even without a current public repo, it is an important city in the portfolio because it shows Phil's pattern of shipping user-facing AI experiences early."
+    "Character Chat was one of Phil's early OpenAI-driven web products. It focused less on infrastructure and more on interaction design, prompt experience, and making AI chat feel immediately playful and understandable.",
+    "It showed his early interest in shipping user-facing AI experiences that normal people could understand quickly."
   ],
   "importance": 76,
   "status": "paused",

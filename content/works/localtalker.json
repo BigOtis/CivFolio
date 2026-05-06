@@ -39,7 +39,7 @@
   ],
   "relationships": [
     { "target": "polylogue", "type": "inspiration", "label": "Conversation orchestration and agent flow" },
-    { "target": "robot-future", "type": "integration", "label": "Broader AI systems and future-tech arc" },
+    { "target": "robot-future", "type": "integration", "label": "AI systems and future-tech writing" },
     { "target": "slopswapper", "type": "trade", "label": "Public-facing proof of fast AI experimentation" }
   ],
   "highlights": [

@@ -4,8 +4,8 @@
   "discipline": "video",
   "summary": "Phil's YouTube outpost for public videos, experiments, commentary, and the broader world around his projects.",
   "description": [
-    "OtisFuse is the media city-state attached to Phil's public brand. It matters because it turns projects into artifacts people can discover, watch, and share without already knowing his code or writing.",
-    "In the world map, it acts as a harbor city for reach, distribution, and public personality. It should make the portfolio feel like it belongs to a real internet-native builder, not just a resume."
+    "OtisFuse is Phil's video outpost for demos, commentary, experiments, and public updates around the things he is building.",
+    "It gives the work another surface area: projects can become videos people discover, watch, and share before they ever read a repo or a blog post."
   ],
   "importance": 71,
   "status": "active",
@@ -46,7 +46,7 @@
   "highlights": [
     "Adds a media layer to Phil's public brand.",
     "Turns projects into shareable artifacts for a broader audience.",
-    "Supports the portfolio's goal of making strangers want to follow what comes next."
+    "Gives strangers a clearer reason to follow what Phil builds next."
   ],
   "productionQueue": [
     "Publish more project demos and commentary.",

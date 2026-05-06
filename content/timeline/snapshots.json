@@ -56,7 +56,7 @@
   {
     "year": 2026,
     "label": "Robot Future Era",
-    "description": "The public brand, IBM AI work, multi-agent tools, and long-running experiments connect into a mature portfolio world.",
+    "description": "Robot Future, IBM AI work, multi-agent tools, games, and public experiments connect into the current Project Empire world.",
     "workStates": {
       "ibm-support-engineer": { "visible": true, "cityLevel": "city" },
       "ibm-ai-machine-learning-engineer": { "visible": true, "cityLevel": "capital" },

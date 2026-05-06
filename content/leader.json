@@ -2,7 +2,7 @@
   "name": "Phil Lopez",
   "headline": "Leader of a builder civilization spanning shipped games, public websites, AI experiments, and product-minded engineering.",
   "currentRole": "IBM AI and Machine Learning Engineer",
-  "summary": "Phil Lopez is a builder who likes turning side ideas into real internet artifacts: websites, AI products, portfolio frameworks, and games that people can actually play. Outside IBM, a lot of the energy goes into public-world projects like Robot Future, PopCurrent, SlopSwapper, and Project Empire, plus long-running Unreal Engine work such as Buster's TD and LocalTalker. That mix of product instinct, front-end execution, storytelling, and systems thinking is the center of the profile. IBM is still an important part of the arc, but the broader story is about shipping things under his own banner, making them public, and building a body of work that spans code, design, writing, and game development.",
+  "summary": "Phil Lopez builds things and puts them into the world: websites, AI tools, portfolio systems, games, writing, and weird internet experiments that become real products instead of staying as ideas. His work runs from enterprise AI and z/OS tooling at IBM to public projects like Robot Future, PopCurrent, SlopSwapper, Buster's TD, LocalTalker, and Project Empire. The throughline is practical ambition: make the thing, polish it until people can understand it, and keep stacking visible proof that software, design, writing, and game development can all feed the same creative engine.",
   "philosophy": [
     "Build real systems that increase the output of the people using them.",
     "Use AI to remove repetitive labor so human attention can move up the stack.",
@@ -18,14 +18,14 @@
   ],
   "achievements": [
     "Built and shipped public websites, AI experiments, and portfolio products under the Robot Future umbrella.",
-    "Developed Unreal Engine game work and shipped Buster's TD on Steam as part of a broader game-development arc.",
-    "Built projects that span websites, media, AI tooling, satire, and game systems rather than staying inside one lane.",
+    "Developed Unreal Engine game work and shipped Buster's TD on Steam.",
+    "Built projects across websites, media, AI tooling, satire, and game systems.",
     "Graduated from RIT with a BS/MS in Computer Science.",
-    "Also works as an AI and machine learning engineer on initiatives for the IBM z/OS organization, bringing enterprise systems rigor into independent builds."
+    "Works as an AI and machine learning engineer on initiatives for the IBM z/OS organization, bringing enterprise systems rigor into independent builds."
   ],
   "contactLinks": [
     { "label": "Email", "url": "mailto:phil.lopezdev@gmail.com" },
-    { "label": "Project Empire Repo", "url": "https://github.com/BigOtis/CivFolio" },
+    { "label": "Project Empire Repo", "url": "https://github.com/BigOtis/Project-Empire" },
     { "label": "GitHub", "url": "https://github.com/BigOtis" },
     { "label": "LinkedIn", "url": "https://www.linkedin.com/in/phil-lopez-84577b64/" },
     { "label": "Robot Future", "url": "https://www.robot-future.com/" }

@@ -4,8 +4,8 @@
   "discipline": "code",
   "summary": "The strategy-map resume site and open-source portfolio framework that turns project history into a living world.",
   "description": [
-    "Project Empire is the meta-city in the empire: the portfolio framework itself. It takes Phil's own body of work and renders it as a 4X-inspired world map, with projects as cities, Great Works as landmarks, and growth over time as a campaign.",
-    "It is intentionally both a personal artifact and a reusable open-source starter. That makes it part demo, part framework, and part statement about how software portfolios can feel authored instead of interchangeable."
+    "Project Empire turns Phil's work history into a 4X-inspired world map, with projects as cities, Great Works as landmarks, and progress over time as a campaign.",
+    "It also ships as a reusable open-source starter, so another builder can clone the repo, replace the content with their own resume and projects, and use the same world-map format to track what they are making."
   ],
   "importance": 88,
   "status": "active",
@@ -31,7 +31,7 @@
       "kind": "image",
       "src": "/assets/works/civfolio.svg",
       "alt": "A stylized world-map city representing the Project Empire framework.",
-      "caption": "A self-referential city where the portfolio becomes the framework."
+      "caption": "A Project Empire city representing the framework behind the map."
     }
   ],
   "greatWorks": [
@@ -45,7 +45,7 @@
   ],
   "relationships": [
     { "target": "robot-future", "type": "integration", "label": "Public brand and portfolio layer" },
-    { "target": "ibm-support-engineer", "type": "inspiration", "label": "Career capital represented as game world" },
+    { "target": "ibm-support-engineer", "type": "inspiration", "label": "Career history represented as game world" },
     { "target": "slopswapper", "type": "inspiration", "label": "Taste-driven front-end experimentation" }
   ],
   "highlights": [
