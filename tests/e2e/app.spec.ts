@@ -668,6 +668,59 @@ test.describe("world map interactions", () => {
     await expect(page.getByText("City Management View")).toHaveCount(0);
   });
 
+  test("map viewport stays synced after browser resize", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await openWorldMap(page);
+    await skipIntroIfVisible(page);
+
+    const getResizeDebug = () =>
+      page.evaluate(() => {
+        const debug = window.__CIVFOLIO_MAP_TEST__?.getDebug();
+        return {
+          viewportWidth: debug?.viewport?.width ?? 0,
+          viewportHeight: debug?.viewport?.height ?? 0,
+          containerWidth: debug?.explorer?.containerSize.width ?? 0,
+          containerHeight: debug?.explorer?.containerSize.height ?? 0,
+        };
+      });
+
+    const initialRobotFuture = await getCityMetrics(page, "robot-future");
+    const initialDebug = await getResizeDebug();
+    await page.setViewportSize({ width: 1000, height: 700 });
+
+    await expect
+      .poll(async () => {
+        const debug = await getResizeDebug();
+        return (
+          debug.containerWidth < initialDebug.containerWidth &&
+          debug.containerHeight < initialDebug.containerHeight &&
+          Math.abs(debug.viewportWidth - debug.containerWidth) <= 1 &&
+          Math.abs(debug.viewportHeight - debug.containerHeight) <= 1
+        );
+      })
+      .toBe(true);
+
+    const resizedRobotFuture = await getCityMetrics(page, "robot-future");
+    expect(Math.abs(resizedRobotFuture.x - initialRobotFuture.x)).toBeGreaterThan(80);
+    expect(resizedRobotFuture.x).toBeGreaterThan(0);
+    expect(resizedRobotFuture.x).toBeLessThan(1000);
+    expect(resizedRobotFuture.y).toBeGreaterThan(0);
+    expect(resizedRobotFuture.y).toBeLessThan(700);
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await expect
+      .poll(async () => {
+        const debug = await getResizeDebug();
+        return (
+          debug.containerWidth >= initialDebug.containerWidth - 1 &&
+          debug.containerHeight >= initialDebug.containerHeight - 1 &&
+          Math.abs(debug.viewportWidth - debug.containerWidth) <= 1 &&
+          Math.abs(debug.viewportHeight - debug.containerHeight) <= 1
+        );
+      })
+      .toBe(true);
+  });
+
   test("creator prompt appears in the corner and dismisses itself", async ({ page }) => {
     await openWorldMap(page, { creatorPromptDelayMs: 1200, creatorPromptLifetimeMs: 1200 });
 
@@ -1129,4 +1182,3 @@ test.describe("canonical routes", () => {
     await expect(page.getByRole("heading", { name: "Robot Future" })).toBeVisible();
   });
 });
-

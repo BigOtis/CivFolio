@@ -26,6 +26,7 @@ import {
   useWorldAudio,
 } from "@/components/world/world-explorer-support";
 import {
+  CAMERA_ZOOM_LIMITS,
   clampCameraToViewport,
   localPointToWorldPoint,
   worldPointToLocalPoint,
@@ -656,6 +657,7 @@ export function WorldExplorer({
   const cameraFrameRef = useRef<number | null>(null);
   const lastCameraTickRef = useRef<number | null>(null);
   const appliedCameraModeRef = useRef<string | null>(null);
+  const previousViewportSizeRef = useRef({ width: 1200, height: 840 });
   const isDraggingRef = useRef(false);
   const introCancelledRef = useRef(false);
   const introTimeoutRef = useRef<number | null>(null);
@@ -675,6 +677,7 @@ export function WorldExplorer({
     containerSize: { width: 1200, height: 840 },
   });
   const selectionSourceRef = useRef<"map" | "route">("route");
+  const skipNextSheetCameraNudgeRef = useRef(false);
   const [selectedYear, setSelectedYear] = useState(world.years[world.years.length - 1]);
   const [filter, setFilter] = useState<Work["discipline"] | "all">("all");
   const [camera, setCamera] = useState<CameraState>(initialCamera);
@@ -932,10 +935,10 @@ export function WorldExplorer({
   );
   const cameraZoomLimits = useMemo(
     () => ({
-      // Lower min on mobile so the user can pull all the way out to a true
-      // fit-to-world overview on small screens.
-      min: isMobile ? 0.32 : 0.58,
-      max: 1.52,
+      // Allow a little whitespace beyond the map edge, especially on mobile,
+      // so edge cities can be re-anchored without changing zoom.
+      min: isMobile ? CAMERA_ZOOM_LIMITS.min : CAMERA_ZOOM_LIMITS.desktopMin,
+      max: CAMERA_ZOOM_LIMITS.max,
     }),
     [isMobile],
   );
@@ -961,7 +964,33 @@ export function WorldExplorer({
     }
 
     const mode = isMobile ? "mobile" : "desktop";
+    const previousViewportSize = previousViewportSizeRef.current;
+    previousViewportSizeRef.current = viewportSize;
+
     if (appliedCameraModeRef.current === mode) {
+      if (
+        Math.abs(previousViewportSize.width - viewportSize.width) < 1 &&
+        Math.abs(previousViewportSize.height - viewportSize.height) < 1
+      ) {
+        return;
+      }
+
+      const current = cameraTargetRef.current;
+      const centerWorldX = (previousViewportSize.width * 0.5 - current.x) / current.zoom;
+      const centerWorldY = (previousViewportSize.height * 0.5 - current.y) / current.zoom;
+      const resized = clampCameraToViewport(
+        {
+          zoom: current.zoom,
+          x: viewportSize.width * 0.5 - centerWorldX * current.zoom,
+          y: viewportSize.height * 0.5 - centerWorldY * current.zoom,
+        },
+        viewportSize,
+        { width: world.width, height: world.height },
+      );
+
+      cameraTargetRef.current = resized;
+      setCamera(resized);
+      setCameraMotionToken((value) => value + 1);
       return;
     }
 
@@ -1057,6 +1086,7 @@ export function WorldExplorer({
 
   function openWork(slug: string) {
     selectionSourceRef.current = "map";
+    skipNextSheetCameraNudgeRef.current = isCompact && sheetState !== "half";
     audio.playUiClick("city");
     stopIntro();
     setShowLeader(false);
@@ -1076,8 +1106,9 @@ export function WorldExplorer({
     updateWorkInRoute();
   }
 
-  function nudgeTowardsPoint(x: number, y: number) {
+  function nudgeTowardsPoint(x: number, y: number, options: { preserveZoom?: boolean } = {}) {
     const current = cameraTargetRef.current;
+    const zoom = options.preserveZoom ? camera.zoom : current.zoom;
     const viewportWidth = viewportSize.width;
     const viewportHeight = viewportSize.height;
     // On mobile the bottom sheet covers the lower portion of the screen; we
@@ -1089,13 +1120,13 @@ export function WorldExplorer({
     const visibleHeight = Math.max(120, viewportHeight - sheetReserveBottom);
     const focusFractionX = isCompact ? 0.5 : isTablet ? 0.52 : 0.58;
     const focusFractionY = isCompact ? 0.46 : 0.54;
-    const desiredX = viewportWidth * focusFractionX - x * current.zoom;
-    const desiredY = visibleHeight * focusFractionY - y * current.zoom;
+    const desiredX = viewportWidth * focusFractionX - x * zoom;
+    const desiredY = visibleHeight * focusFractionY - y * zoom;
     const dx = clamp(desiredX - current.x, -180, 180);
     const dy = clamp(desiredY - current.y, isCompact ? -240 : -72, isCompact ? 240 : 72);
 
     setCameraTarget({
-      zoom: current.zoom,
+      zoom,
       x: current.x + dx * (isCompact ? 0.32 : 0.22),
       y: current.y + dy * (isCompact ? 0.38 : 0.18),
     });
@@ -1278,9 +1309,13 @@ export function WorldExplorer({
     if (!isCompact || !selectedCity) {
       return;
     }
+    if (skipNextSheetCameraNudgeRef.current) {
+      skipNextSheetCameraNudgeRef.current = false;
+      return;
+    }
     // When the sheet snaps to a new height, re-nudge the camera so the
     // selected city remains visible above the sheet.
-    nudgeTowardsPoint(selectedCity.x, selectedCity.y);
+    nudgeTowardsPoint(selectedCity.x, selectedCity.y, { preserveZoom: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sheetState, isCompact]);
 
@@ -2583,7 +2618,7 @@ export function WorldExplorer({
                 "panel-enter pointer-events-auto flex flex-col overflow-hidden rounded-[30px] border border-[rgba(244,211,141,0.18)] bg-[rgba(17,12,9,0.9)] shadow-[0_28px_90px_rgba(0,0,0,0.42)] backdrop-blur-xl transition-[opacity,transform,filter] duration-220 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform",
                 isMobile
                   ? "w-full max-h-[calc(100svh-6rem)] rounded-[22px]"
-                  : "w-[min(46rem,calc(100%-3rem))] max-h-[calc(100vh-4rem)]",
+                  : "w-[min(40rem,calc(100%-3rem))] max-h-[calc(100vh-8rem)]",
                 showLeader
                   ? "opacity-100 translate-y-0 scale-100 blur-0"
                   : "pointer-events-none opacity-0 -translate-y-2 scale-[0.985] blur-[2px]",
@@ -2594,7 +2629,7 @@ export function WorldExplorer({
                 "border-b border-white/10",
                 isCompact
                   ? "flex flex-col gap-3 px-3 py-3"
-                  : "flex items-start justify-between gap-4 px-5 py-4",
+                  : "flex items-start justify-between gap-4 px-4 py-3",
               )}
             >
               <div
@@ -2609,7 +2644,7 @@ export function WorldExplorer({
                   height={640}
                   className={cn(
                     "rounded-[20px] border border-white/10 object-cover",
-                    isCompact ? "h-12 w-12 shrink-0 rounded-[16px]" : "h-20 w-20 rounded-[24px]",
+                    isCompact ? "h-12 w-12 shrink-0 rounded-[16px]" : "h-16 w-16 rounded-[20px]",
                   )}
                   unoptimized
                 />
@@ -2627,13 +2662,13 @@ export function WorldExplorer({
                   <h2
                     className={cn(
                       "mt-1 font-display leading-none text-[var(--parchment)]",
-                      isCompact ? "text-xl" : "mt-2 text-4xl",
+                      isCompact ? "text-xl" : "mt-2 text-3xl",
                     )}
                   >
                     {leader.name}
                   </h2>
                   {!isCompact ? (
-                    <p className="mt-2 text-sm leading-7 text-[var(--muted-soft)]">{leader.headline}</p>
+                    <p className="mt-2 text-[13px] leading-6 text-[var(--muted-soft)]">{leader.headline}</p>
                   ) : null}
                   {leader.currentRole && !isCompact ? (
                     <p className="mt-2 text-[10px] uppercase tracking-[0.24em] text-[var(--muted)]">
@@ -2678,13 +2713,13 @@ export function WorldExplorer({
             <div
               className={cn(
                 "min-h-0 flex-1 overflow-y-auto overscroll-contain",
-                isCompact ? "px-3 py-3 pb-6" : "px-5 py-5 pb-8",
+                isCompact ? "px-3 py-3 pb-6" : "px-4 py-4 pb-6",
               )}
             >
             <p
               className={cn(
                 "text-[var(--muted-soft)]",
-                isCompact ? "text-[12px] leading-5" : "text-sm leading-7",
+                isCompact ? "text-[12px] leading-5" : "text-[13px] leading-6",
               )}
             >
               {leader.summary}
@@ -2693,7 +2728,7 @@ export function WorldExplorer({
             <div
               className={cn(
                 "grid gap-3",
-                isCompact ? "mt-3 grid-cols-2" : "mt-5 sm:grid-cols-3",
+                isCompact ? "mt-3 grid-cols-2" : "mt-4 sm:grid-cols-3",
               )}
             >
               <div
@@ -2969,4 +3004,3 @@ export function WorldExplorer({
     </section>
   );
 }
-

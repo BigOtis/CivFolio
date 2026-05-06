@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Application, Circle, Container, Graphics, Text } from "pixi.js";
 import { Viewport } from "pixi-viewport";
 
+import { CAMERA_ZOOM_LIMITS, getCameraBounds } from "@/components/world/world-camera";
 import { clamp, getImprovementKind, getRoutePoint } from "@/components/world/world-explorer-support";
 import type { RenderCity, WorldRenderModel, WorldRoute, WorldState } from "@/lib/content/derive";
 import type { SiteConfig, Work } from "@/lib/content/schema";
@@ -1211,6 +1212,20 @@ function createScene(viewport: Viewport) {
   } satisfies SceneRefs;
 }
 
+function clampViewportPosition(
+  x: number,
+  y: number,
+  zoom: number,
+  viewport: { width: number; height: number },
+  world: { width: number; height: number },
+) {
+  const bounds = getCameraBounds(zoom, viewport, world);
+  return {
+    x: clamp(x, bounds.minX, bounds.maxX),
+    y: clamp(y, bounds.minY, bounds.maxY),
+  };
+}
+
 function updateVisibility(scene: SceneRefs, viewport: Viewport, selectedSlug: string | null, hoveredCity: string | null) {
   const bounds = viewport.getVisibleBounds();
   const zoom = viewport.scale.x;
@@ -1452,15 +1467,16 @@ export function WorldMapPixi({
           return false;
         }
 
-        const marginX = Math.min(220, Math.max(96, host.clientWidth * 0.18));
-        const marginY = Math.min(180, Math.max(72, host.clientHeight * 0.18));
-        const minX = host.clientWidth - staticWorldWidth * viewport.scale.x - marginX;
-        const maxX = marginX;
-        const minY = host.clientHeight - staticWorldHeight * viewport.scale.y - marginY;
-        const maxY = marginY;
+        const next = clampViewportPosition(
+          viewport.x + dx,
+          viewport.y + dy,
+          viewport.scale.x,
+          { width: host.clientWidth, height: host.clientHeight },
+          { width: staticWorldWidth, height: staticWorldHeight },
+        );
 
-        viewport.x = clamp(viewport.x + dx, Math.min(minX, maxX), Math.max(minX, maxX));
-        viewport.y = clamp(viewport.y + dy, Math.min(minY, maxY), Math.max(minY, maxY));
+        viewport.x = next.x;
+        viewport.y = next.y;
         updateVisibility(scene, viewport, selectedSlugRef.current, hoveredCityRef.current);
         callbacksRef.current.onCameraChange({
           zoom: viewport.scale.x,
@@ -1479,17 +1495,22 @@ export function WorldMapPixi({
         }
 
         const anchor = viewport.toScreen(node.worldX, node.worldY);
-        const nextZoom = clamp(viewport.scale.x * Math.exp(delta), 0.38, 1.52);
-        const marginX = Math.min(220, Math.max(96, host.clientWidth * 0.18));
-        const marginY = Math.min(180, Math.max(72, host.clientHeight * 0.18));
-        const minX = host.clientWidth - staticWorldWidth * nextZoom - marginX;
-        const maxX = marginX;
-        const minY = host.clientHeight - staticWorldHeight * nextZoom - marginY;
-        const maxY = marginY;
+        const nextZoom = clamp(
+          viewport.scale.x * Math.exp(delta),
+          CAMERA_ZOOM_LIMITS.min,
+          CAMERA_ZOOM_LIMITS.max,
+        );
+        const nextPosition = clampViewportPosition(
+          anchor.x - node.worldX * nextZoom,
+          anchor.y - node.worldY * nextZoom,
+          nextZoom,
+          { width: host.clientWidth, height: host.clientHeight },
+          { width: staticWorldWidth, height: staticWorldHeight },
+        );
 
         viewport.scale.set(nextZoom);
-        viewport.x = clamp(anchor.x - node.worldX * nextZoom, Math.min(minX, maxX), Math.max(minX, maxX));
-        viewport.y = clamp(anchor.y - node.worldY * nextZoom, Math.min(minY, maxY), Math.max(minY, maxY));
+        viewport.x = nextPosition.x;
+        viewport.y = nextPosition.y;
         updateVisibility(scene, viewport, selectedSlugRef.current, hoveredCityRef.current);
         callbacksRef.current.onCameraChange({
           zoom: viewport.scale.x,
@@ -1559,6 +1580,7 @@ export function WorldMapPixi({
     let mouseMoveHandler: ((event: MouseEvent) => void) | null = null;
     let mouseUpHandler: ((event: MouseEvent) => void) | null = null;
     let wheelHandler: (() => void) | null = null;
+    let resizeObserver: ResizeObserver | null = null;
     let pressStart: { x: number; y: number } | null = null;
     let dragPointer:
       | {
@@ -1634,12 +1656,7 @@ export function WorldMapPixi({
         viewport.pinch({ percent: 0.92, noDrag: false });
         // Gentler coast if another interaction ever feeds the decelerate path.
         viewport.decelerate({ friction: 0.945, minSpeed: 0.004 });
-        viewport.clamp({ direction: "all", underflow: "center" });
-        // Match the React-side cameraZoomLimits.min on mobile (0.32). The
-        // small change is irrelevant on desktop because the desktop floor
-        // never reaches this clamp, but it lets compact viewports pinch out
-        // to a true fit-to-world overview.
-        viewport.clampZoom({ minScale: 0.32, maxScale: 1.52 });
+        viewport.clampZoom({ minScale: CAMERA_ZOOM_LIMITS.min, maxScale: CAMERA_ZOOM_LIMITS.max });
         viewport.eventMode = "static";
         viewport.sortableChildren = true;
 
@@ -1724,19 +1741,48 @@ export function WorldMapPixi({
             { fromClamp },
           );
         };
+        const syncViewportSize = () => {
+          const width = host.clientWidth || staticWorldWidth;
+          const height = host.clientHeight || staticWorldHeight;
+          if (
+            Math.abs(viewport.screenWidth - width) < 1 &&
+            Math.abs(viewport.screenHeight - height) < 1
+          ) {
+            return;
+          }
+
+          viewport.resize(width, height, staticWorldWidth, staticWorldHeight);
+
+          const next = clampViewportPosition(
+            viewport.x,
+            viewport.y,
+            viewport.scale.x,
+            { width, height },
+            { width: staticWorldWidth, height: staticWorldHeight },
+          );
+
+          viewport.position.set(next.x, next.y);
+          updateVisibility(scene, viewport, selectedSlugRef.current, hoveredCityRef.current);
+          callbacksRef.current.onCameraChange({
+            zoom: viewport.scale.x,
+            x: viewport.x,
+            y: viewport.y,
+          });
+        };
         const shouldIgnoreDragTarget = (target: EventTarget | null) =>
           target instanceof Element &&
           target.closest("button, a, input, textarea, select, label, [role='button']");
         const applyDragPosition = (startViewportX: number, startViewportY: number, dx: number, dy: number) => {
-          const marginX = Math.min(220, Math.max(96, host.clientWidth * 0.18));
-          const marginY = Math.min(180, Math.max(72, host.clientHeight * 0.18));
-          const minX = host.clientWidth - staticWorldWidth * viewport.scale.x - marginX;
-          const maxX = marginX;
-          const minY = host.clientHeight - staticWorldHeight * viewport.scale.y - marginY;
-          const maxY = marginY;
+          const next = clampViewportPosition(
+            startViewportX + dx,
+            startViewportY + dy,
+            viewport.scale.x,
+            { width: host.clientWidth, height: host.clientHeight },
+            { width: staticWorldWidth, height: staticWorldHeight },
+          );
 
-          viewport.x = clamp(startViewportX + dx, Math.min(minX, maxX), Math.max(minX, maxX));
-          viewport.y = clamp(startViewportY + dy, Math.min(minY, maxY), Math.max(minY, maxY));
+          viewport.x = next.x;
+          viewport.y = next.y;
           movedHandler?.();
         };
         pointerDownHandler = (event) => {
@@ -1871,17 +1917,22 @@ export function WorldMapPixi({
             const localX = tapClientX - hostRect.left;
             const localY = tapClientY - hostRect.top;
             const previousScale = viewport.scale.x;
-            const targetScale = clamp(previousScale * (previousScale >= 1.05 ? 1 / 1.6 : 1.6), 0.38, 1.52);
+            const targetScale = clamp(
+              previousScale * (previousScale >= 1.05 ? 1 / 1.6 : 1.6),
+              CAMERA_ZOOM_LIMITS.min,
+              CAMERA_ZOOM_LIMITS.max,
+            );
             const worldAnchor = viewport.toWorld(localX, localY);
-            const marginX = Math.min(220, Math.max(96, host.clientWidth * 0.18));
-            const marginY = Math.min(180, Math.max(72, host.clientHeight * 0.18));
-            const minX = host.clientWidth - staticWorldWidth * targetScale - marginX;
-            const maxX = marginX;
-            const minY = host.clientHeight - staticWorldHeight * targetScale - marginY;
-            const maxY = marginY;
+            const next = clampViewportPosition(
+              localX - worldAnchor.x * targetScale,
+              localY - worldAnchor.y * targetScale,
+              targetScale,
+              { width: host.clientWidth, height: host.clientHeight },
+              { width: staticWorldWidth, height: staticWorldHeight },
+            );
             viewport.scale.set(targetScale);
-            viewport.x = clamp(localX - worldAnchor.x * targetScale, Math.min(minX, maxX), Math.max(minX, maxX));
-            viewport.y = clamp(localY - worldAnchor.y * targetScale, Math.min(minY, maxY), Math.max(minY, maxY));
+            viewport.x = next.x;
+            viewport.y = next.y;
             movedHandler?.();
             lastTapAt = 0;
             return;
@@ -2024,6 +2075,8 @@ export function WorldMapPixi({
         window.addEventListener("mousemove", mouseMoveHandler, { passive: true });
         window.addEventListener("mouseup", mouseUpHandler, { passive: true });
         app.canvas.addEventListener("wheel", wheelHandler, { passive: true });
+        resizeObserver = new ResizeObserver(syncViewportSize);
+        resizeObserver.observe(host);
 
         app.ticker.add((ticker) => {
           renderClockRef.current += ticker.deltaMS;
@@ -2101,6 +2154,7 @@ export function WorldMapPixi({
       if (app?.canvas && wheelHandler) {
         app.canvas.removeEventListener("wheel", wheelHandler);
       }
+      resizeObserver?.disconnect();
 
       sceneRef.current = null;
       viewportRef.current = null;

@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  CAMERA_ZOOM_LIMITS,
   clampCameraToViewport,
+  getCameraBounds,
   localPointToViewportPoint,
   localPointToWorldPoint,
   viewportPointToLocalPoint,
@@ -57,5 +59,29 @@ describe("world camera math", () => {
     expect(nextLocal.x).toBeCloseTo(anchorLocal.x, 6);
     expect(nextLocal.y).toBeCloseTo(anchorLocal.y, 6);
     expect(next.zoom).toBeGreaterThan(camera.zoom);
+  });
+
+  it("allows enough overscroll to center edge cities during camera focus", () => {
+    const zoom = 1.06;
+    const edgeCity = { x: 1236, y: 356 };
+    const desired = {
+      zoom,
+      x: viewport.width * 0.5 - edgeCity.x * zoom,
+      y: viewport.height * 0.58 - edgeCity.y * zoom,
+    };
+
+    const clamped = clampCameraToViewport(desired, viewport, world);
+
+    expect(clamped.x).toBeCloseTo(desired.x, 6);
+    expect(clamped.y).toBeCloseTo(desired.y, 6);
+  });
+
+  it("exposes whitespace beyond the map edge at the zoom floor", () => {
+    const bounds = getCameraBounds(CAMERA_ZOOM_LIMITS.min, viewport, world);
+
+    expect(bounds.maxX).toBeGreaterThan(0);
+    expect(bounds.maxY).toBeGreaterThan(0);
+    expect(bounds.minX).toBeLessThan(viewport.width - world.width * CAMERA_ZOOM_LIMITS.min);
+    expect(bounds.minY).toBeLessThan(viewport.height - world.height * CAMERA_ZOOM_LIMITS.min);
   });
 });

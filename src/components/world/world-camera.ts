@@ -13,6 +13,34 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
+export const CAMERA_ZOOM_LIMITS = {
+  min: 0.28,
+  desktopMin: 0.48,
+  max: 1.52,
+} as const;
+
+export function getCameraOverscrollMargin(viewport: Size) {
+  return {
+    x: Math.min(640, Math.max(160, viewport.width * 0.42)),
+    y: Math.min(520, Math.max(140, viewport.height * 0.38)),
+  };
+}
+
+export function getCameraBounds(zoom: number, viewport: Size, world: Size) {
+  const margin = getCameraOverscrollMargin(viewport);
+  const minX = viewport.width - world.width * zoom - margin.x;
+  const maxX = margin.x;
+  const minY = viewport.height - world.height * zoom - margin.y;
+  const maxY = margin.y;
+
+  return {
+    minX: Math.min(minX, maxX),
+    maxX: Math.max(minX, maxX),
+    minY: Math.min(minY, maxY),
+    maxY: Math.max(minY, maxY),
+  };
+}
+
 export function getViewportScale(viewport: Size, container: Size) {
   return {
     x: container.width > 0 ? viewport.width / container.width : 1,
@@ -37,17 +65,12 @@ export function viewportPointToLocalPoint(viewportX: number, viewportY: number, 
 }
 
 export function clampCameraToViewport(next: CameraLike, viewport: Size, world: Size) {
-  const marginX = Math.min(220, Math.max(96, viewport.width * 0.18));
-  const marginY = Math.min(180, Math.max(72, viewport.height * 0.18));
-  const minX = viewport.width - world.width * next.zoom - marginX;
-  const maxX = marginX;
-  const minY = viewport.height - world.height * next.zoom - marginY;
-  const maxY = marginY;
+  const bounds = getCameraBounds(next.zoom, viewport, world);
 
   return {
     ...next,
-    x: clamp(next.x, Math.min(minX, maxX), Math.max(minX, maxX)),
-    y: clamp(next.y, Math.min(minY, maxY), Math.max(minY, maxY)),
+    x: clamp(next.x, bounds.minX, bounds.maxX),
+    y: clamp(next.y, bounds.minY, bounds.maxY),
   };
 }
 
@@ -55,7 +78,7 @@ export function zoomCameraAtPoint(
   current: CameraLike,
   delta: number,
   anchor: { x: number; y: number },
-  limits = { min: 0.58, max: 1.52 },
+  limits: { min: number; max: number } = { min: CAMERA_ZOOM_LIMITS.desktopMin, max: CAMERA_ZOOM_LIMITS.max },
 ) {
   const zoomFactor = Math.exp(delta);
   const nextZoom = clamp(current.zoom * zoomFactor, limits.min, limits.max);
