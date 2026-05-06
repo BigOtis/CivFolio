@@ -1763,11 +1763,14 @@ export function WorldMapPixi({
 
           viewport.position.set(next.x, next.y);
           updateVisibility(scene, viewport, selectedSlugRef.current, hoveredCityRef.current);
-          callbacksRef.current.onCameraChange({
-            zoom: viewport.scale.x,
-            x: viewport.x,
-            y: viewport.y,
-          });
+          callbacksRef.current.onCameraChange(
+            {
+              zoom: viewport.scale.x,
+              x: viewport.x,
+              y: viewport.y,
+            },
+            { fromClamp: introActiveRef.current },
+          );
         };
         const shouldIgnoreDragTarget = (target: EventTarget | null) =>
           target instanceof Element &&
