@@ -280,10 +280,10 @@ test.describe("mobile compact mode", () => {
   });
 });
 
-test.describe("intro dismissal persistence", () => {
+test.describe("intro refresh behavior", () => {
   test.setTimeout(60_000);
 
-  test("skipping the intro persists across reload", async ({ page }) => {
+  test("skipping the intro only dismisses the current page load", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.addInitScript(() => {
       window.__CIVFOLIO_INTRO_STEP_MS = 200;
@@ -297,13 +297,14 @@ test.describe("intro dismissal persistence", () => {
     const storedBefore = await page.evaluate(() =>
       window.localStorage.getItem("project-empire:intro-dismissed:v2"),
     );
-    expect(storedBefore).toBe("1");
+    expect(storedBefore).toBeNull();
 
     await page.reload({ waitUntil: "networkidle" });
-    await expect(page.getByTestId("intro-panel")).toHaveCount(0);
+    await expect(page.getByTestId("intro-panel")).toBeVisible();
+    await expect(page.getByTestId("intro-title")).toHaveText(/^Founding /);
   });
 
-  test("Replay Intro clears persistence and starts again", async ({ page }) => {
+  test("Replay Intro starts again after an in-page skip", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.addInitScript(() => {
       window.__CIVFOLIO_INTRO_STEP_MS = 200;
@@ -317,10 +318,7 @@ test.describe("intro dismissal persistence", () => {
     await page.getByRole("button", { name: "Replay Intro" }).click({ force: true });
     await expect(page.getByTestId("intro-panel")).toBeVisible();
 
-    const storedAfterReplay = await page.evaluate(() =>
-      window.localStorage.getItem("project-empire:intro-dismissed:v2"),
-    );
-    expect(storedAfterReplay).toBeNull();
+    await expect(page.getByTestId("intro-title")).toHaveText(/^Founding /);
   });
 });
 

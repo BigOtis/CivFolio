@@ -326,6 +326,38 @@ test.describe("world map interactions", () => {
       .toBeNull();
   });
 
+  test("intro frames the first founding city when the canvas finishes loading", async ({ page }) => {
+    test.setTimeout(90_000);
+    await openWorldMap(page, { introStepMs: 10_000, introFinalMs: 500 });
+
+    await expect(page.getByTestId("intro-title")).toHaveText("Founding IBM Support Engineer");
+    await expect
+      .poll(
+        async () => {
+          const snapshot = await page.evaluate(() => ({
+            metrics: window.__CIVFOLIO_MAP_TEST__?.getCityMetrics("ibm-support-engineer") ?? null,
+            viewport: window.__CIVFOLIO_MAP_TEST__?.getDebug().viewport ?? null,
+          }));
+          if (!snapshot.metrics || !snapshot.viewport) {
+            return false;
+          }
+          const { metrics, viewport } = snapshot;
+
+          return (
+            Math.abs(metrics.x - viewport.width * 0.5) < 36 &&
+            metrics.y > viewport.height * 0.5 &&
+            metrics.y < viewport.height * 0.72
+          );
+        },
+        { timeout: 12_000 },
+      )
+      .toBe(true);
+
+    await expect
+      .poll(async () => page.evaluate(() => window.__CIVFOLIO_MAP_TEST__?.getDebug().camera?.zoom ?? 0))
+      .toBeGreaterThan(1.15);
+  });
+
   test("intro keeps previously founded cities visible across timeline jumps", async ({ page }) => {
     test.setTimeout(90_000);
     await openWorldMap(page, { introStepMs: 10_000, introFinalMs: 500 });

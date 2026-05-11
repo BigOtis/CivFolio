@@ -1701,6 +1701,7 @@ export function WorldMapPixi({
   const selectedSlugRef = useRef(selectedSlug);
   const introFocusSlugRef = useRef(introFocusSlug);
   const introActiveRef = useRef(introActive);
+  const cameraRef = useRef(camera);
   const terrainAtPointRef = useRef(terrainAtPoint);
   const renderClockRef = useRef(0);
   const syncingCameraRef = useRef(false);
@@ -1750,8 +1751,10 @@ export function WorldMapPixi({
     selectedSlugRef.current = selectedSlug;
     introFocusSlugRef.current = introFocusSlug;
     introActiveRef.current = introActive;
+    cameraRef.current = camera;
     terrainAtPointRef.current = terrainAtPoint;
   }, [
+    camera,
     currentState,
     hoveredCity,
     hoveredGreatWork,
@@ -2114,6 +2117,10 @@ export function WorldMapPixi({
         appRef.current = app;
         viewportRef.current = viewport;
         sceneRef.current = scene;
+        const latestCamera = cameraRef.current;
+        viewport.position.set(latestCamera.x, latestCamera.y);
+        viewport.scale.set(latestCamera.zoom);
+        updateVisibility(scene, viewport, selectedSlugRef.current, hoveredCityRef.current);
         setSceneVersion((value) => value + 1);
 
         movedHandler = (event?: { type?: string }) => {

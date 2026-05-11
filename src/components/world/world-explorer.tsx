@@ -7,7 +7,6 @@ import {
   startTransition,
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -56,30 +55,6 @@ const initialCamera: CameraState = {
   x: 80,
   y: 30,
 };
-
-const INTRO_DISMISSED_KEY = "project-empire:intro-dismissed:v2";
-
-function markIntroDismissed() {
-  if (typeof window === "undefined") {
-    return;
-  }
-  try {
-    window.localStorage.setItem(INTRO_DISMISSED_KEY, "1");
-  } catch {
-    // Storage may be disabled; nothing to persist.
-  }
-}
-
-function clearIntroDismissed() {
-  if (typeof window === "undefined") {
-    return;
-  }
-  try {
-    window.localStorage.removeItem(INTRO_DISMISSED_KEY);
-  } catch {
-    // Storage may be disabled; nothing to clear.
-  }
-}
 
 function getDefaultCamera({
   isMobile,
@@ -696,28 +671,6 @@ export function WorldExplorer({
   const [selectedUnitLock, setSelectedUnitLock] = useState<{ id: string; x: number; y: number } | null>(null);
   const [introActive, setIntroActive] = useState(site.scene.introEnabled);
   const [introIndex, setIntroIndex] = useState(0);
-  // Once the intro has been dismissed or completed it stays dismissed across
-  // reloads. Replay button always re-enables it.
-  // We use useLayoutEffect so the dismissal lands before the intro-sequence
-  // effect runs and tries to advance the timeline to the first founding step.
-  useLayoutEffect(() => {
-    if (typeof window === "undefined" || !site.scene.introEnabled) {
-      return;
-    }
-    try {
-      if (window.localStorage.getItem(INTRO_DISMISSED_KEY) === "1") {
-        // Mark cancelled so the year-restore effect snaps the map back to the
-        // latest year if the intro effect briefly nudged it during the first
-        // render pass.
-        introCancelledRef.current = true;
-        setIntroActive(false);
-        const finalYear = world.years[world.years.length - 1];
-        setSelectedYear(finalYear);
-      }
-    } catch {
-      // Storage may be disabled (private mode); fall through.
-    }
-  }, [site.scene.introEnabled, world.years]);
   const [showLeader, setShowLeader] = useState(false);
   const [showLegend, setShowLegend] = useState(false);
   const [showMobileControls, setShowMobileControls] = useState(false);
@@ -1060,7 +1013,6 @@ export function WorldExplorer({
     setIntroIndex(0);
     setCameraTarget(defaultCamera);
     updateWorkInRoute();
-    clearIntroDismissed();
     setIntroActive(true);
   }
 
@@ -1080,7 +1032,6 @@ export function WorldExplorer({
     if (resetCamera) {
       setCameraTarget(defaultCamera);
     }
-    markIntroDismissed();
     setIntroActive(false);
   }
 
