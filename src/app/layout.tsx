@@ -14,7 +14,7 @@ const bodyFont = Source_Sans_3({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://civfolio-863153693968.us-central1.run.app"),
+  metadataBase: new URL("https://projectempire.robot-future.com"),
   applicationName: "Project Empire",
   title: {
     default: "Project Empire",

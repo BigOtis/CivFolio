@@ -4,8 +4,9 @@ import { getWorldData } from "@/lib/content";
 
 export const dynamic = "force-static";
 
+const baseUrl = "https://projectempire.robot-future.com";
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const baseUrl = "https://civfolio-863153693968.us-central1.run.app";
   const { works } = await getWorldData();
   const staticRoutes = ["", "/archive", "/about"];
 

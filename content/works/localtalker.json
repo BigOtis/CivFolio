@@ -23,8 +23,8 @@
   "media": [
     {
       "kind": "image",
-      "src": "/assets/works/localtalker.svg",
-      "alt": "A forest stronghold representing the LocalTalker Unreal plugin.",
+      "src": "/assets/works/localtalker-shot.png",
+      "alt": "A LocalTalker city platform with conversation robots, holographic character dialogue, and Unreal-style NPC speech systems.",
       "caption": "A dialogue stronghold built for local NPC conversations, speech synthesis, and in-engine orchestration."
     }
   ],

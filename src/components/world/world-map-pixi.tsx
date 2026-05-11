@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Application, Circle, Container, Graphics, Text } from "pixi.js";
+import { Application, Assets, Circle, Container, Graphics, Sprite, Text } from "pixi.js";
 import { Viewport } from "pixi-viewport";
 
 import { CAMERA_ZOOM_LIMITS, getCameraBounds } from "@/components/world/world-camera";
 import { clamp, getImprovementKind, getRoutePoint } from "@/components/world/world-explorer-support";
-import type { RenderCity, WorldRenderModel, WorldRoute, WorldState } from "@/lib/content/derive";
+import type { CityLevel, RenderCity, WorldRenderModel, WorldRoute, WorldState } from "@/lib/content/derive";
 import type { SiteConfig, Work } from "@/lib/content/schema";
 
 const terrainFill = {
@@ -31,23 +31,6 @@ const terrainShade = {
   forest: "#3d4b38",
   hills: "#614735",
   highlands: "#554f42",
-} as const;
-
-const disciplineTone = {
-  code: "#c9ab74",
-  art: "#b98970",
-  music: "#86a2a3",
-  video: "#8f9f80",
-  writing: "#b7ad74",
-  client: "#a97867",
-} as const;
-
-const terrainStone = {
-  coast: { dark: 0x474840, mid: 0x64665f, light: 0x908d7d },
-  plains: { dark: 0x4f4538, mid: 0x71624c, light: 0x9a8764 },
-  forest: { dark: 0x4a493d, mid: 0x686756, light: 0x8f8d73 },
-  hills: { dark: 0x534033, mid: 0x785d49, light: 0xa18366 },
-  highlands: { dark: 0x4d473c, mid: 0x6f6757, light: 0x978d76 },
 } as const;
 
 type TileResourceKind = "memory" | "compute" | "network" | "storage" | "terminal";
@@ -142,11 +125,32 @@ const improvementOffsets = [
   { x: 70, y: 48 },
 ] as const;
 
-const cityBannerOffsetY: Record<string, number> = {
-  popcurrent: -76,
-  polylogue: -82,
-  otisfuse: -62,
-  civfolio: -56,
+const cityArtworkFileBySlug = {
+  "ibm-support-engineer": "ibmsupport",
+  "busters-td": "busterstd",
+  "ibm-ai-machine-learning-engineer": "ibmai",
+  "robot-future": "robotfuture",
+  localtalker: "localtalker",
+  popcurrent: "popcurrent",
+  "character-chat": "characterchat",
+  polylogue: "polylogue",
+  otisfuse: "otisfuse",
+  civfolio: "projectempire",
+  slopswapper: "slopswap",
+};
+
+const cityArtworkVisibleTopByFileSlug: Record<string, number> = {
+  busterstd: 0.1484,
+  characterchat: 0.0391,
+  ibmai: 0.0195,
+  ibmsupport: 0.1758,
+  localtalker: 0.0352,
+  otisfuse: 0.0273,
+  polylogue: 0.0273,
+  popcurrent: 0.0938,
+  projectempire: 0.0508,
+  robotfuture: 0.0234,
+  slopswap: 0.0352,
 };
 
 const routeStyle: Record<
@@ -182,12 +186,49 @@ type UnitNode = {
   descriptor: UnitDescriptor;
 };
 
+type WorldPoint = { x: number; y: number };
+
+type TileWirePacket = {
+  graphic: Graphics;
+  from: WorldPoint;
+  to: WorldPoint;
+  control: WorldPoint;
+  startMs: number;
+  durationMs: number;
+  seed: number;
+  color: number;
+  width: number;
+};
+
+type CityAnimationNode = {
+  root: Container;
+  signal: Graphics;
+  shimmer: Graphics;
+  spark: Graphics;
+  sparkles: Array<{
+    graphic: Graphics;
+    x: number;
+    y: number;
+    phase: number;
+    size: number;
+  }>;
+  seed: number;
+  accent: number;
+};
+
 type CityNode = {
+  city: RenderCity;
   hitArea: Graphics;
   halo: Graphics;
+  groundLight: Graphics;
+  shadow: Sprite;
+  artwork: Sprite;
+  animation: CityAnimationNode;
   label: Container;
   labelBackground: Graphics;
   labelText: Text;
+  labelWidth: number;
+  active: boolean;
   radius: number;
   worldX: number;
   worldY: number;
@@ -205,6 +246,10 @@ type GreatWorkNode = {
 
 type SceneRefs = {
   terrainLayer: Container;
+  terrainBorderGlow: Graphics;
+  tileWireLayer: Container;
+  tileWirePackets: TileWirePacket[];
+  tileWireAnchors: WorldPoint[];
   routeLayer: Container;
   improvementLayer: Container;
   greatWorkLayer: Container;
@@ -243,6 +288,8 @@ declare global {
         layerOrder: { greatWorks: number; cities: number; greatWorkLabels: number } | null;
         routeCount: number;
         routePathCount: number;
+        tileWirePacketCount: number;
+        tileWireAnchorCount: number;
         unitCount: number;
         sceneVersion: number;
         camera: { x: number; y: number; zoom: number } | null;
@@ -300,12 +347,300 @@ function parsePolygonPoints(points: string) {
     .flatMap((pair) => pair.split(",").map(Number));
 }
 
-function drawRoundedLabel(background: Graphics, width: number, tone: string) {
+function parsePolygonVertices(points: string) {
+  const values = parsePolygonPoints(points);
+  const vertices: Array<{ x: number; y: number }> = [];
+  for (let index = 0; index < values.length; index += 2) {
+    vertices.push({ x: values[index], y: values[index + 1] });
+  }
+  return vertices;
+}
+
+function drawTerrainHex(
+  graphic: Graphics,
+  hex: WorldRenderModel["hexes"][number],
+  fillColor: number,
+  rimColor: number,
+  shadeColor: number,
+  tileSeed: number,
+) {
+  const vertices = parsePolygonVertices(hex.points);
+  const points = vertices.flatMap((point) => [point.x, point.y]);
+  const top = vertices.slice().sort((a, b) => a.y - b.y).slice(0, 3);
+  const bottom = vertices.slice().sort((a, b) => b.y - a.y).slice(0, 3);
+  const left = vertices.reduce((closest, point) => (point.x < closest.x ? point : closest), vertices[0]);
+  const right = vertices.reduce((closest, point) => (point.x > closest.x ? point : closest), vertices[0]);
+  const gold = mixColor(0xf3d08a, rimColor, 0.18);
+
+  graphic
+    .poly(points, true)
+    .fill({ color: fillColor, alpha: hex.terrain === "coast" ? 0.9 : 0.96 })
+    .stroke({
+      width: 1.65,
+      color: rimColor,
+      alpha: 0.2,
+    });
+
+  graphic.poly([top[0].x, top[0].y, top[1].x, top[1].y, hex.x, hex.y, top[2].x, top[2].y], true).fill({
+    color: mixColor(0xf7e3b5, fillColor, 0.58),
+    alpha: hex.terrain === "coast" ? 0.07 : 0.09 + tileSeed * 0.035,
+  });
+  graphic.poly([bottom[0].x, bottom[0].y, bottom[1].x, bottom[1].y, hex.x, hex.y, bottom[2].x, bottom[2].y], true).fill({
+    color: shadeColor,
+    alpha: hex.terrain === "coast" ? 0.12 : 0.15,
+  });
+  graphic.poly([left.x, left.y, hex.x, hex.y, bottom[2].x, bottom[2].y], true).fill({ color: 0x06090a, alpha: 0.08 });
+  graphic.poly([right.x, right.y, top[2].x, top[2].y, hex.x, hex.y], true).fill({ color: 0xe8c47a, alpha: 0.035 + tileSeed * 0.02 });
+
+  for (let index = 0; index < vertices.length; index += 1) {
+    const current = vertices[index];
+    const next = vertices[(index + 1) % vertices.length];
+    const midY = (current.y + next.y) / 2;
+    const midX = (current.x + next.x) / 2;
+    const upperEdge = midY < hex.y + 8;
+    const facingLight = midX < hex.x + 16;
+    if (upperEdge || facingLight) {
+      graphic.moveTo(current.x, current.y).lineTo(next.x, next.y).stroke({
+        width: upperEdge ? 1.45 : 0.95,
+        color: gold,
+        alpha: upperEdge ? 0.34 : 0.18,
+        cap: "round",
+      });
+    }
+  }
+
+  graphic
+    .circle(hex.x - 11, hex.y - 14, 14)
+    .fill({ color: 0xf4ead2, alpha: hex.terrain === "coast" ? 0.052 : 0.034 + tileSeed * 0.014 });
+}
+
+function drawElectricBorderGlow(graphic: Graphics, hexes: WorldRenderModel["hexes"], elapsedMs: number) {
+  graphic.clear();
+
+  const time = elapsedMs * 0.00006;
+  hexes.forEach((hex) => {
+    const vertices = parsePolygonVertices(hex.points);
+
+    vertices.forEach((current, edgeIndex) => {
+      const next = vertices[(edgeIndex + 1) % vertices.length];
+      const midX = (current.x + next.x) / 2;
+      const midY = (current.y + next.y) / 2;
+      const wave = (midX * 0.0065 + midY * 0.004 - time + edgeIndex * 0.08) % 1;
+      const normalized = wave < 0 ? wave + 1 : wave;
+      const distanceFromFront = Math.min(normalized, 1 - normalized);
+
+      if (distanceFromFront > 0.055) {
+        return;
+      }
+
+      const edgeLength = Math.hypot(next.x - current.x, next.y - current.y);
+      const edgeUnitX = edgeLength === 0 ? 0 : (next.x - current.x) / edgeLength;
+      const edgeUnitY = edgeLength === 0 ? 0 : (next.y - current.y) / edgeLength;
+      const segmentLength = edgeLength * 0.54;
+      const pulse = 1 - distanceFromFront / 0.055;
+      const startX = midX - edgeUnitX * segmentLength * 0.5;
+      const startY = midY - edgeUnitY * segmentLength * 0.5;
+      const endX = midX + edgeUnitX * segmentLength * 0.5;
+      const endY = midY + edgeUnitY * segmentLength * 0.5;
+
+      graphic.moveTo(startX, startY).lineTo(endX, endY).stroke({
+        width: 8,
+        color: 0xf4c96f,
+        alpha: 0.04 + pulse * 0.16,
+        cap: "round",
+      });
+      graphic.moveTo(startX, startY).lineTo(endX, endY).stroke({
+        width: 2,
+        color: 0xffe6a3,
+        alpha: 0.12 + pulse * 0.48,
+        cap: "round",
+      });
+    });
+  });
+}
+
+function seededUnit(seed: number) {
+  const value = Math.sin(seed * 12.9898) * 43758.5453;
+  return value - Math.floor(value);
+}
+
+function getQuadraticPoint(from: WorldPoint, control: WorldPoint, to: WorldPoint, t: number) {
+  const inverse = 1 - t;
+  return {
+    x: inverse * inverse * from.x + 2 * inverse * t * control.x + t * t * to.x,
+    y: inverse * inverse * from.y + 2 * inverse * t * control.y + t * t * to.y,
+  };
+}
+
+function buildTileWireAnchors(hexes: WorldRenderModel["hexes"]) {
+  const anchors = new Map<string, WorldPoint>();
+
+  hexes.forEach((hex) => {
+    parsePolygonVertices(hex.points).forEach((point) => {
+      const x = Math.round(point.x);
+      const y = Math.round(point.y);
+      anchors.set(`${x}:${y}`, { x, y });
+    });
+  });
+
+  return Array.from(anchors.values());
+}
+
+function chooseTileWireDestination(anchors: WorldPoint[], from: WorldPoint, seed: number) {
+  let fallback = anchors[Math.floor(seededUnit(seed + 79) * anchors.length)] ?? from;
+
+  for (let attempt = 0; attempt < 16; attempt += 1) {
+    const candidate = anchors[Math.floor(seededUnit(seed + attempt * 17.31) * anchors.length)];
+    if (!candidate) {
+      continue;
+    }
+
+    const distance = Math.hypot(candidate.x - from.x, candidate.y - from.y);
+    if (distance > 56 && distance < 260) {
+      return candidate;
+    }
+
+    if (candidate !== from && Math.hypot(fallback.x - from.x, fallback.y - from.y) < distance) {
+      fallback = candidate;
+    }
+  }
+
+  return fallback;
+}
+
+function resetTileWirePacket(packet: TileWirePacket, anchors: WorldPoint[], elapsedMs: number, seed: number) {
+  if (anchors.length < 2) {
+    packet.graphic.clear();
+    packet.startMs = Number.POSITIVE_INFINITY;
+    return;
+  }
+
+  const from = anchors[Math.floor(seededUnit(seed + 3.7) * anchors.length)] ?? anchors[0];
+  const to = chooseTileWireDestination(anchors, from, seed + 19.1);
+  const midX = (from.x + to.x) / 2;
+  const midY = (from.y + to.y) / 2;
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const distance = Math.max(1, Math.hypot(dx, dy));
+  const bend = (seededUnit(seed + 41.4) - 0.5) * Math.min(92, distance * 0.36);
+  const colorRoll = seededUnit(seed + 87.2);
+
+  packet.from = from;
+  packet.to = to;
+  packet.control = {
+    x: midX + (-dy / distance) * bend,
+    y: midY + (dx / distance) * bend,
+  };
+  packet.startMs = elapsedMs + seededUnit(seed + 11.5) * 2200;
+  packet.durationMs = 3200 + seededUnit(seed + 23.9) * 2800 + distance * 4.8;
+  packet.seed = seed;
+  packet.color = colorRoll > 0.72 ? 0x9ad5f6 : colorRoll > 0.44 ? 0xf4c96f : 0xffe6a3;
+  packet.width = 1.1 + seededUnit(seed + 61.8) * 1.2;
+}
+
+function setupTileWirePackets(scene: SceneRefs, hexes: WorldRenderModel["hexes"], elapsedMs: number) {
+  scene.tileWireLayer.removeChildren().forEach((child) => {
+    if (child !== scene.terrainBorderGlow) {
+      child.destroy({ children: true });
+    }
+  });
+  scene.tileWireLayer.addChild(scene.terrainBorderGlow);
+  scene.tileWireAnchors = buildTileWireAnchors(hexes);
+  scene.tileWirePackets = [];
+
+  const packetCount = Math.min(18, Math.max(8, Math.floor(scene.tileWireAnchors.length / 24)));
+  for (let index = 0; index < packetCount; index += 1) {
+    const packet: TileWirePacket = {
+      graphic: new Graphics(),
+      from: { x: 0, y: 0 },
+      to: { x: 0, y: 0 },
+      control: { x: 0, y: 0 },
+      startMs: 0,
+      durationMs: 1,
+      seed: index + 1,
+      color: 0xffe6a3,
+      width: 1.4,
+    };
+    resetTileWirePacket(packet, scene.tileWireAnchors, elapsedMs - index * 260, index * 97.31 + 5);
+    scene.tileWirePackets.push(packet);
+    scene.tileWireLayer.addChild(packet.graphic);
+  }
+}
+
+function updateTileWires(scene: SceneRefs, elapsedMs: number) {
+  scene.tileWirePackets.forEach((packet, index) => {
+    if (elapsedMs > packet.startMs + packet.durationMs) {
+      resetTileWirePacket(packet, scene.tileWireAnchors, elapsedMs, packet.seed + 997.13 + index * 31.7);
+    }
+
+    const progress = (elapsedMs - packet.startMs) / packet.durationMs;
+    packet.graphic.clear();
+    if (progress <= 0 || progress >= 1) {
+      return;
+    }
+
+    const fade = Math.sin(progress * Math.PI);
+    const head = clamp(progress, 0, 1);
+    const tail = clamp(progress - 0.18, 0, 1);
+    const middle = clamp(progress - 0.07, 0, 1);
+    const tailPoint = getQuadraticPoint(packet.from, packet.control, packet.to, tail);
+    const middlePoint = getQuadraticPoint(packet.from, packet.control, packet.to, middle);
+    const headPoint = getQuadraticPoint(packet.from, packet.control, packet.to, head);
+
+    packet.graphic
+      .moveTo(tailPoint.x, tailPoint.y)
+      .quadraticCurveTo(middlePoint.x, middlePoint.y, headPoint.x, headPoint.y)
+      .stroke({ width: packet.width + 4.4, color: packet.color, alpha: 0.05 * fade, cap: "round" });
+    packet.graphic
+      .moveTo(tailPoint.x, tailPoint.y)
+      .quadraticCurveTo(middlePoint.x, middlePoint.y, headPoint.x, headPoint.y)
+      .stroke({ width: packet.width, color: packet.color, alpha: 0.2 + fade * 0.58, cap: "round" });
+    packet.graphic.circle(headPoint.x, headPoint.y, packet.width + 1.3).fill({ color: 0xfff0ba, alpha: 0.22 + fade * 0.5 });
+  });
+}
+
+function getCityBannerTitle(title: string) {
+  const normalized = title.trim();
+  const overrides: Record<string, string> = {
+    "IBM AI and Machine Learning Engineer": "IBM AI + ML",
+    "IBM Support Engineer": "IBM SUPPORT",
+    "Buster's TD": "BUSTER'S TD",
+  };
+  const override = overrides[normalized];
+  if (override) {
+    return override;
+  }
+
+  const upper = normalized.toUpperCase();
+  if (upper.length <= 24) {
+    return upper;
+  }
+
+  const compact = upper
+    .replace(/\bAND\b/g, "+")
+    .replace(/\bENGINEER\b/g, "ENG")
+    .replace(/\bMACHINE LEARNING\b/g, "ML")
+    .replace(/\bSOFTWARE\b/g, "SW")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (compact.length <= 24) {
+    return compact;
+  }
+
+  return `${compact.slice(0, 21).trim()}...`;
+}
+
+function drawRoundedLabel(background: Graphics, width: number, tone: string, active = false) {
+  const accent = toPixiColor(tone);
+
   background
     .clear()
-    .roundRect(0, 0, width, 28, 14)
-    .fill({ color: 0x19100b, alpha: 0.86 })
-    .stroke({ width: 1.35, color: toPixiColor(tone), alpha: 0.94 });
+    .roundRect(0, 0, width, 26, 8)
+    .fill({ color: 0x0e0a08, alpha: active ? 0.94 : 0.9 })
+    .stroke({ width: 1, color: accent, alpha: active ? 0.82 : 0.62 });
+  background.moveTo(width / 2 - 6, 25.5).lineTo(width / 2, 32).lineTo(width / 2 + 6, 25.5).fill({ color: 0x0e0a08, alpha: active ? 0.94 : 0.9 });
+  background.moveTo(width / 2 - 6, 25.5).lineTo(width / 2, 32).lineTo(width / 2 + 6, 25.5).stroke({ width: 1, color: accent, alpha: active ? 0.82 : 0.62, join: "round" });
 }
 
 function createBanner(title: string, tone: string) {
@@ -316,22 +651,22 @@ function createBanner(title: string, tone: string) {
   label.addChild(background);
 
   const titleText = new Text({
-    text: title.toUpperCase(),
+    text: getCityBannerTitle(title),
     style: {
       fill: 0xf7e8c7,
+      fontFamily: "Arial, Helvetica, sans-serif",
       fontSize: 12,
-      fontWeight: "600",
-      letterSpacing: 1.8,
-      stroke: { color: 0x0c0908, width: 1.4 },
+      fontWeight: "700",
+      letterSpacing: 0.8,
     },
   });
-  titleText.x = 13;
-  titleText.y = 6;
   label.addChild(titleText);
 
-  const width = Math.max(110, titleText.width + 26);
+  const width = Math.max(92, Math.min(224, titleText.width + 30));
+  titleText.x = Math.round((width - titleText.width) / 2);
+  titleText.y = 5;
   drawRoundedLabel(background, width, tone);
-  label.pivot.set(width / 2, 14);
+  label.pivot.set(width / 2, 31);
 
   return { label, background, titleText, width };
 }
@@ -448,178 +783,9 @@ function drawPennant(graphic: Graphics, x: number, y: number, accent: number, di
   graphic.poly([x, y - 13, x + direction * 7, y - 10, x, y - 7], true).fill({ color: accent, alpha: active ? 0.96 : 0.84 });
 }
 
-function drawTower(
-  graphic: Graphics,
-  x: number,
-  baseY: number,
-  width: number,
-  height: number,
-  body: number,
-  roof: number,
-  trim: number,
-  windowTone: number,
-) {
-  const left = x - width / 2;
-  const top = baseY - height;
-  graphic.roundRect(left, top, width, height, 2).fill({ color: body, alpha: 1 }).stroke({ width: 1, color: trim, alpha: 0.5 });
-  drawBattlements(graphic, x, top - 2, width, trim, 0.78);
-  graphic.poly([left - 1, top, x, top - 10, left + width + 1, top], true).fill({ color: roof, alpha: 0.92 });
-  graphic.roundRect(x - 1.6, top + height * 0.35, 3.2, Math.max(4.2, height * 0.28), 1).fill({ color: windowTone, alpha: 0.78 });
-}
-
-function drawDistrictHouse(
-  graphic: Graphics,
-  x: number,
-  baseY: number,
-  width: number,
-  height: number,
-  body: number,
-  roof: number,
-  trim: number,
-  windowTone: number,
-) {
-  const left = x - width / 2;
-  const top = baseY - height;
-  graphic.roundRect(left, top, width, height, 2.2).fill({ color: body, alpha: 1 }).stroke({ width: 0.9, color: trim, alpha: 0.42 });
-  graphic.poly([left - 1, top, x, top - 7, left + width + 1, top], true).fill({ color: roof, alpha: 0.88 });
-  graphic.roundRect(x - 1.4, top + height * 0.35, 2.8, Math.max(3.4, height * 0.24), 0.9).fill({ color: windowTone, alpha: 0.72 });
-}
-
-type CityStructureProfile = {
-  keepVariant: 0 | 1 | 2 | 3;
-  districtPattern: 0 | 1 | 2 | 3;
-  roofVariant: 0 | 1 | 2;
-  towerSpread: number;
-  lowerQuarter: boolean;
-  shrine: boolean;
-  extraTower: boolean;
-};
-
-function getCityStructureProfile(city: RenderCity): CityStructureProfile {
-  const seed = hashString(`${city.slug}:${city.tags.join("|")}:${city.greatWorks.length}`);
-
-  return {
-    keepVariant: (seed % 4) as 0 | 1 | 2 | 3,
-    districtPattern: ((seed >> 3) % 4) as 0 | 1 | 2 | 3,
-    roofVariant: ((seed >> 5) % 3) as 0 | 1 | 2,
-    towerSpread: 18 + ((seed >> 7) % 9),
-    lowerQuarter: ((seed >> 11) & 1) === 1,
-    shrine: city.greatWorks.length > 0 || ((seed >> 13) & 1) === 1,
-    extraTower: city.level !== "settlement" && (((seed >> 17) & 1) === 1 || city.metrics.prestige >= 8),
-  };
-}
-
-function drawRoofCap(
-  graphic: Graphics,
-  x: number,
-  topY: number,
-  width: number,
-  rise: number,
-  roof: number,
-  variant: 0 | 1 | 2,
-  alpha: number,
-) {
-  if (variant === 0) {
-    graphic.poly([x - width / 2, topY, x, topY - rise, x + width / 2, topY], true).fill({ color: roof, alpha });
-    return;
-  }
-
-  if (variant === 1) {
-    graphic.poly([
-      x - width / 2,
-      topY,
-      x - width * 0.18,
-      topY - rise,
-      x + width * 0.18,
-      topY - rise,
-      x + width / 2,
-      topY,
-    ], true).fill({ color: roof, alpha });
-    return;
-  }
-
-  graphic.poly([
-    x - width / 2,
-    topY,
-    x - width * 0.18,
-    topY - rise * 0.78,
-    x,
-    topY - rise * 0.52,
-    x + width * 0.18,
-    topY - rise * 0.78,
-    x + width / 2,
-    topY,
-  ], true).fill({ color: roof, alpha });
-}
-
-function drawCentralKeep(
-  graphic: Graphics,
-  {
-    x,
-    baseY,
-    width,
-    height,
-    body,
-    bright,
-    roof,
-    trim,
-    gate,
-    windowTone,
-    accent,
-    profile,
-    active,
-  }: {
-    x: number;
-    baseY: number;
-    width: number;
-    height: number;
-    body: number;
-    bright: number;
-    roof: number;
-    trim: number;
-    gate: number;
-    windowTone: number;
-    accent: number;
-    profile: CityStructureProfile;
-    active: boolean;
-  },
-) {
-  const left = x - width / 2;
-  const top = baseY - height;
-
-  if (profile.keepVariant === 0) {
-    graphic.roundRect(left, top, width, height, 2.8).fill({ color: bright, alpha: 0.98 }).stroke({ width: 1.05, color: trim, alpha: 0.54 });
-    drawRoofCap(graphic, x, top, width + 2, 12, roof, profile.roofVariant, 0.92);
-    graphic.roundRect(x - 3.2, baseY - Math.min(11, height * 0.48), 6.4, Math.min(11, height * 0.48), 1.2).fill({ color: gate, alpha: 0.92 });
-    return;
-  }
-
-  if (profile.keepVariant === 1) {
-    graphic.roundRect(left + 2, top + 2, width - 4, height - 2, 2.8).fill({ color: bright, alpha: 0.98 }).stroke({ width: 1.05, color: trim, alpha: 0.54 });
-    graphic.roundRect(left - 4, top + 8, 7, height - 8, 2).fill({ color: body, alpha: 1 }).stroke({ width: 0.9, color: trim, alpha: 0.46 });
-    graphic.roundRect(left + width - 3, top + 8, 7, height - 8, 2).fill({ color: body, alpha: 1 }).stroke({ width: 0.9, color: trim, alpha: 0.46 });
-    drawRoofCap(graphic, x, top + 2, width - 2, 10, roof, profile.roofVariant, 0.92);
-    drawRoofCap(graphic, left - 0.5, top + 8, 8, 7, roof, 0, 0.86);
-    drawRoofCap(graphic, left + width + 0.5, top + 8, 8, 7, roof, 0, 0.86);
-    graphic.roundRect(x - 3.1, baseY - Math.min(11, height * 0.44), 6.2, Math.min(11, height * 0.44), 1.2).fill({ color: gate, alpha: 0.92 });
-    return;
-  }
-
-  if (profile.keepVariant === 2) {
-    graphic.roundRect(left + 3, top, width - 6, height, 2.8).fill({ color: bright, alpha: 0.98 }).stroke({ width: 1.05, color: trim, alpha: 0.54 });
-    drawBattlements(graphic, x, top - 2, width - 10, trim, 0.78);
-    graphic.roundRect(x - 2.8, top - 8, 5.6, 8, 1.4).fill({ color: body, alpha: 1 }).stroke({ width: 0.9, color: trim, alpha: 0.48 });
-    drawRoofCap(graphic, x, top - 8, 8, 6, roof, 0, 0.9);
-    graphic.roundRect(x - 3.2, baseY - Math.min(12, height * 0.46), 6.4, Math.min(12, height * 0.46), 1.2).fill({ color: gate, alpha: 0.92 });
-    return;
-  }
-
-  graphic.roundRect(left, top + 4, width, height - 4, 3).fill({ color: bright, alpha: 0.98 }).stroke({ width: 1.05, color: trim, alpha: 0.54 });
-  drawRoofCap(graphic, x, top + 4, width + 2, 9, roof, profile.roofVariant, 0.9);
-  graphic.circle(x, top - 2, 6).fill({ color: mixColor(accent, 0xf3dfb8, 0.34), alpha: active ? 0.94 : 0.84 });
-  graphic.circle(x, top - 2, 11).fill({ color: accent, alpha: active ? 0.18 : 0.1 });
-  graphic.roundRect(x - 3.1, baseY - Math.min(10, height * 0.4), 6.2, Math.min(10, height * 0.4), 1.2).fill({ color: gate, alpha: 0.92 });
-  graphic.roundRect(x - 1.6, top + height * 0.34, 3.2, Math.max(4.2, height * 0.18), 1).fill({ color: windowTone, alpha: 0.76 });
+function drawWindowGlow(graphic: Graphics, x: number, y: number, color: number, active: boolean, scale = 1) {
+  graphic.circle(x, y, 3.4 * scale).fill({ color, alpha: active ? 0.28 : 0.18 });
+  graphic.roundRect(x - 1.45 * scale, y - 2.4 * scale, 2.9 * scale, 4.8 * scale, 0.8 * scale).fill({ color, alpha: active ? 0.96 : 0.88 });
 }
 
 function drawDisciplineSigil(graphic: Graphics, city: RenderCity, x: number, y: number, accent: number) {
@@ -665,296 +831,477 @@ function drawDisciplineSigil(graphic: Graphics, city: RenderCity, x: number, y: 
   graphic.circle(x + 4.8, y, 1.2).fill({ color: accent, alpha: 0.86 });
 }
 
+type CityIconTemplate = {
+  body: "citadel" | "gate" | "spire" | "dome" | "workshop";
+  towers: 0 | 1 | 2 | 3;
+  flags: boolean;
+};
+
+const cityIconTemplates: Record<CityLevel, [CityIconTemplate, CityIconTemplate]> = {
+  settlement: [
+    { body: "gate", towers: 0, flags: true },
+    { body: "workshop", towers: 1, flags: false },
+  ],
+  town: [
+    { body: "gate", towers: 2, flags: true },
+    { body: "dome", towers: 1, flags: false },
+  ],
+  city: [
+    { body: "citadel", towers: 2, flags: true },
+    { body: "dome", towers: 2, flags: false },
+  ],
+  capital: [
+    { body: "spire", towers: 3, flags: true },
+    { body: "dome", towers: 3, flags: false },
+  ],
+  wonder: [
+    { body: "spire", towers: 3, flags: true },
+    { body: "workshop", towers: 3, flags: true },
+  ],
+};
+
+type CityIconPalette = {
+  base: number;
+  wall: number;
+  wallDark: number;
+  light: number;
+  roof: number;
+  trim: number;
+  accent: number;
+  discipline: number;
+};
+
+const cityDisciplinePalettes: Record<RenderCity["discipline"], Omit<CityIconPalette, "light">> = {
+  code: {
+    base: 0x342313,
+    wall: 0x856237,
+    wallDark: 0x241207,
+    roof: 0xb67834,
+    trim: 0xe7bd64,
+    accent: 0xd9963e,
+    discipline: 0xc9ab74,
+  },
+  art: {
+    base: 0x321d18,
+    wall: 0x9b6451,
+    wallDark: 0x25110d,
+    roof: 0xc87550,
+    trim: 0xefb384,
+    accent: 0xd58a6d,
+    discipline: 0xb98970,
+  },
+  music: {
+    base: 0x18282a,
+    wall: 0x5f8586,
+    wallDark: 0x0d1d1f,
+    roof: 0x86a9a8,
+    trim: 0xb9d4c5,
+    accent: 0x8cc9c8,
+    discipline: 0x86a2a3,
+  },
+  video: {
+    base: 0x202719,
+    wall: 0x78885d,
+    wallDark: 0x121a0d,
+    roof: 0xb4a85d,
+    trim: 0xd7cc83,
+    accent: 0xbec873,
+    discipline: 0x8f9f80,
+  },
+  writing: {
+    base: 0x2f2815,
+    wall: 0x96864c,
+    wallDark: 0x211909,
+    roof: 0xc6a654,
+    trim: 0xf0d284,
+    accent: 0xddbd64,
+    discipline: 0xb7ad74,
+  },
+  client: {
+    base: 0x311d18,
+    wall: 0x8b604f,
+    wallDark: 0x21100c,
+    roof: 0xb7734d,
+    trim: 0xe2aa7c,
+    accent: 0xc98662,
+    discipline: 0xa97867,
+  },
+};
+
+function getCityIconTemplate(city: RenderCity) {
+  return cityIconTemplates[city.level][hashString(`${city.slug}:event-city-icon`) % 2];
+}
+
+function getCityIconPalette(city: RenderCity, active: boolean): CityIconPalette {
+  const discipline = cityDisciplinePalettes[city.discipline];
+  const banner = toPixiColor(city.bannerTone);
+  return {
+    base: mixColor(discipline.base, banner, active ? 0.08 : 0.04),
+    wall: mixColor(discipline.wall, 0xf4d39a, active ? 0.1 : 0.04),
+    wallDark: discipline.wallDark,
+    light: active ? 0xffedbd : mixColor(0xf7d99a, discipline.trim, 0.18),
+    roof: mixColor(discipline.roof, banner, 0.12),
+    trim: active ? mixColor(discipline.trim, 0xffe5a8, 0.34) : discipline.trim,
+    accent: mixColor(discipline.accent, banner, 0.22),
+    discipline: discipline.discipline,
+  };
+}
+
+function drawEventCityPlatform(graphic: Graphics, radius: number, palette: CityIconPalette, active: boolean) {
+  graphic.ellipse(5, 22, radius + 20, 8).fill({ color: 0x030201, alpha: active ? 0.52 : 0.42 });
+  graphic.ellipse(0, 15, radius + 10, 5.5).fill({ color: palette.accent, alpha: active ? 0.14 : 0.08 });
+  graphic.roundRect(-(radius + 8), 5, (radius + 8) * 2, 11, 4).fill({ color: palette.base, alpha: 1 }).stroke({ width: 1.35, color: palette.trim, alpha: active ? 0.78 : 0.62 });
+  graphic.moveTo(-(radius + 1), 8).lineTo(radius + 1, 8).stroke({ width: 1.1, color: 0xffe8b6, alpha: active ? 0.32 : 0.22, cap: "round" });
+}
+
+function drawEventCityTower(
+  graphic: Graphics,
+  x: number,
+  baseY: number,
+  height: number,
+  palette: CityIconPalette,
+  active: boolean,
+) {
+  const width = 12;
+  const top = baseY - height;
+  graphic.roundRect(x - width / 2, top, width, height, 2).fill({ color: palette.wall, alpha: 1 }).stroke({ width: 1.25, color: palette.trim, alpha: active ? 0.78 : 0.62 });
+  graphic.roundRect(x + 1.2, top + 3, width * 0.34, height - 5, 1.2).fill({ color: palette.wallDark, alpha: 0.32 });
+  drawBattlements(graphic, x, top - 3, width + 4, palette.trim, active ? 0.9 : 0.74);
+  graphic.poly([x - width / 2 - 2, top - 2, x, top - 13, x + width / 2 + 2, top - 2], true).fill({ color: palette.roof, alpha: 1 }).stroke({ width: 1, color: palette.trim, alpha: 0.58 });
+  drawWindowGlow(graphic, x, top + height * 0.58, palette.light, active, 0.72);
+}
+
+function drawEventCityBlock(
+  graphic: Graphics,
+  x: number,
+  baseY: number,
+  width: number,
+  height: number,
+  palette: CityIconPalette,
+  active: boolean,
+) {
+  const top = baseY - height;
+  graphic.roundRect(x - width / 2, top, width, height, 3).fill({ color: palette.wall, alpha: 1 }).stroke({ width: 1.25, color: palette.trim, alpha: active ? 0.76 : 0.6 });
+  graphic.roundRect(x + width * 0.08, top + 3, width * 0.36, height - 5, 1.5).fill({ color: palette.wallDark, alpha: 0.3 });
+  graphic.poly([x - width / 2 - 3, top + 2, x, top - 10, x + width / 2 + 3, top + 2], true).fill({ color: palette.roof, alpha: 1 }).stroke({ width: 1, color: palette.trim, alpha: 0.54 });
+  [-0.22, 0.22].forEach((offset) => drawWindowGlow(graphic, x + width * offset, top + height * 0.62, palette.light, active, 0.48));
+}
+
+function drawEventCityCore(
+  graphic: Graphics,
+  template: CityIconTemplate,
+  city: RenderCity,
+  palette: CityIconPalette,
+  active: boolean,
+) {
+  if (template.body === "dome") {
+    graphic.poly([-20, -1, -12, -18, 0, -28, 12, -18, 20, -1], true).fill({ color: mixColor(palette.accent, palette.light, 0.38), alpha: 1 }).stroke({ width: 1.35, color: palette.trim, alpha: 0.7 });
+    graphic.moveTo(-9, -9).quadraticCurveTo(0, -22, 9, -9).stroke({ width: 1.1, color: 0xffedc4, alpha: 0.3, cap: "round" });
+    return;
+  }
+
+  if (template.body === "spire") {
+    const height = city.level === "wonder" ? 48 : 38;
+    graphic.poly([-17, 6, 0, -height, 17, 6], true).fill({ color: mixColor(palette.accent, palette.light, 0.32), alpha: 1 }).stroke({ width: 1.35, color: palette.trim, alpha: 0.76 });
+    graphic.poly([-6, 3, 0, -height + 14, 6, 3], true).fill({ color: palette.light, alpha: active ? 0.46 : 0.32 });
+    graphic.circle(0, -height + 5, 3.6).fill({ color: palette.light, alpha: 0.96 });
+    return;
+  }
+
+  if (template.body === "workshop") {
+    drawEventCityBlock(graphic, -9, 6, 20, 20, palette, active);
+    drawEventCityBlock(graphic, 11, 6, 18, 16, { ...palette, wall: mixColor(palette.discipline, palette.wall, 0.42) }, active);
+    graphic.moveTo(12, -13).lineTo(20, -22).lineTo(23, -19).lineTo(16, -13).stroke({ width: 1.4, color: palette.accent, alpha: 0.9, cap: "round", join: "round" });
+    return;
+  }
+
+  if (template.body === "gate") {
+    drawEventCityBlock(graphic, 0, 6, 28, 19, palette, active);
+    graphic.roundRect(-5.5, -4, 11, 10, 2).fill({ color: 0x150b07, alpha: 0.96 }).stroke({ width: 0.9, color: palette.trim, alpha: 0.46 });
+    return;
+  }
+
+  drawEventCityBlock(graphic, -10, 6, 19, 20, palette, active);
+  drawEventCityBlock(graphic, 10, 6, 19, 20, { ...palette, wall: mixColor(palette.wall, palette.discipline, 0.18) }, active);
+}
+
 function drawCityGlyph(graphic: Graphics, city: RenderCity, active: boolean) {
   const accent = toPixiColor(city.bannerTone);
-  const tone = toPixiColor(disciplineTone[city.discipline]);
-  const stone = terrainStone[city.terrain];
-  const seed = hashString(city.slug);
-  const profile = getCityStructureProfile(city);
-  const age = clamp(city.ageYears / 16, 0, 1);
-  const sprawl = clamp((city.metrics.reach + city.metrics.activity) / 20, 0, 1);
   const prestige = clamp(city.metrics.prestige / 10, 0, 1);
-  const stability = clamp(city.metrics.stability / 10, 0, 1);
-  const leftBias = ((seed >> 2) % 4) - 1.5;
-  const rightBias = ((seed >> 5) % 4) - 1.5;
-  const glowAlpha = active ? 0.46 : 0.36;
-  const baseRadius = city.radius + (city.level === "wonder" ? 14 : 8);
-  const wall = mixColor(mixColor(stone.dark, stone.mid, active ? 0.38 : 0.32), 0x382f29, age * 0.08);
-  const wallLight = mixColor(stone.mid, 0xd8c79d, active ? 0.3 : 0.25);
-  const wallBright = mixColor(stone.light, 0xf6e3b8, active ? 0.3 : 0.25);
-  const roofBase = city.level === "wonder" ? 0xcdb374 : city.level === "capital" ? 0xb28a63 : 0xa57a58;
-  const roof = mixColor(roofBase, 0x6d675f, age * 0.07);
-  const windowTone = 0xf5ddb4;
-  const trim = active ? 0xf0c980 : mixColor(wallBright, accent, 0.16);
-  const districtTint = mixColor(tone, wallBright, 0.46);
-  const gate = 0x241710;
-  const leftTowerHeight = 12 + Math.round(prestige * 4 + age * 2 + leftBias);
-  const rightTowerHeight = 12 + Math.round(stability * 4 + age * 2 + rightBias);
-  const outerDistricts = sprawl > 0.52;
-  const oldQuarter = age > 0.62;
+  const template = getCityIconTemplate(city);
   const ceremonialCrown = prestige > 0.72 || city.level === "capital" || city.level === "wonder";
-  const towerSpread = profile.towerSpread;
+  const scale = clamp(city.radius / 26, 0.88, 1.32);
+  const radius = city.level === "wonder" ? 42 : city.level === "capital" ? 37 : city.level === "city" ? 33 : city.level === "town" ? 28 : 22;
+  const palette = getCityIconPalette(city, active);
 
   graphic.clear();
-  graphic.circle(0, 0, city.radius + 20).fill({ color: tone, alpha: active ? 0.24 : 0.18 });
-  graphic.circle(0, -4, city.radius + 13).fill({ color: accent, alpha: active ? 0.2 : 0.15 });
-  graphic.ellipse(0, baseRadius * 0.68, city.radius + 14, 9.5).fill({ color: 0x070403, alpha: 0.36 });
-  graphic.ellipse(0, baseRadius * 0.52, city.radius + 11, 13).fill({ color: accent, alpha: glowAlpha });
-  graphic.ellipse(0, baseRadius * 0.4, city.radius + 16, 7).fill({ color: tone, alpha: active ? 0.28 : 0.21 });
+  graphic.scale.set(scale);
+
+  drawEventCityPlatform(graphic, radius, palette, active);
+  const towerHeight = city.level === "wonder" ? 40 : city.level === "capital" ? 35 : city.level === "city" ? 29 : 23;
+  if (template.towers >= 2) {
+    drawEventCityTower(graphic, -radius * 0.72, 7, towerHeight, palette, active);
+    drawEventCityTower(graphic, radius * 0.72, 7, towerHeight, palette, active);
+  }
+  if (template.towers === 1 || template.towers === 3) {
+    drawEventCityTower(graphic, 0, 7, towerHeight + (template.towers === 3 ? 7 : 0), { ...palette, wall: mixColor(palette.wall, palette.light, 0.2) }, active);
+  }
+  drawEventCityCore(graphic, template, city, palette, active);
+
+  const wallWidth = radius * 1.7;
+  graphic.roundRect(-wallWidth / 2, -5, wallWidth, 14, 4).fill({ color: palette.wallDark, alpha: 0.98 }).stroke({ width: 1.35, color: palette.trim, alpha: active ? 0.82 : 0.66 });
+  graphic.roundRect(-wallWidth / 2 + 5, -2, wallWidth - 10, 3, 1.5).fill({ color: mixColor(palette.accent, palette.light, 0.24), alpha: active ? 0.34 : 0.22 });
+  drawBattlements(graphic, 0, -8, wallWidth - 8, palette.trim, active ? 0.86 : 0.7);
+  graphic.roundRect(-5, -1, 10, 10, 2).fill({ color: 0x120905, alpha: 0.96 }).stroke({ width: 0.9, color: palette.trim, alpha: 0.5 });
+
+  if (ceremonialCrown) {
+    const crownY = city.level === "wonder" ? -42 : city.level === "capital" ? -35 : -29;
+    graphic.poly([0, crownY - 8, 5, crownY + 3, 0, crownY + 8, -5, crownY + 3], true).fill({ color: mixColor(accent, palette.light, 0.34), alpha: 0.96 }).stroke({ width: 0.8, color: palette.light, alpha: 0.42, join: "round" });
+  }
+
+  if (template.flags) {
+    drawPennant(graphic, -radius * 0.52, -15, accent, -1, active);
+    if (city.level !== "settlement") {
+      drawPennant(graphic, radius * 0.52, -15, accent, 1, active);
+    }
+  }
+
+  drawDisciplineSigil(graphic, city, 0, 3.5, accent);
+}
+
+void drawCityGlyph;
+
+function redrawCachedCityGlyph(graphic: Graphics, city: RenderCity, active: boolean) {
+  void city;
+  void active;
+  graphic.cacheAsTexture(false);
+
+  graphic.clear();
+  graphic.cacheAsTexture({ resolution: Math.max(3, window.devicePixelRatio || 1) });
+}
+
+function getCityArtworkWidth(city: RenderCity) {
+  void city;
+  return 120;
+}
+
+function getCityArtworkLabelOffset(city: RenderCity) {
+  const fileSlug = getCityArtworkFileSlug(city);
+  const visibleTop = cityArtworkVisibleTopByFileSlug[fileSlug] ?? 0.04;
+  const artworkHeight = getCityArtworkWidth(city) * (2 / 3);
+  const artworkTop = -artworkHeight * 0.62;
+  const visibleTopY = artworkTop + visibleTop * artworkHeight;
+
+  return visibleTopY - 8;
+}
+
+function getCityArtworkFileSlug(city: RenderCity) {
+  return cityArtworkFileBySlug[city.slug as keyof typeof cityArtworkFileBySlug] ?? city.slug;
+}
+
+function createCityShadow(city: RenderCity, active: boolean) {
+  const path = `/assets/cities/shadows/${getCityArtworkFileSlug(city)}.png`;
+  const shadow = Sprite.from(Assets.get(path) ?? path);
+
+  shadow.anchor.set(0.5, 0.62);
+  shadow.eventMode = "none";
+  setCityShadowState(shadow, city, active);
+
+  return shadow;
+}
+
+function drawCityGroundLight(graphic: Graphics, city: RenderCity, active: boolean, phase = 0) {
+  const accent = toPixiColor(city.bannerTone);
+  const width = getCityArtworkWidth(city);
+  const pulse = (Math.sin(phase) + 1) / 2;
+
   graphic
-    .roundRect(-(city.radius + 10), city.radius * 0.15, (city.radius + 10) * 2, 6.8, 3.4)
-    .fill({ color: 0x211711, alpha: 0.58 })
-    .stroke({ width: active ? 1.5 : 1.2, color: trim, alpha: active ? 0.72 : 0.58 });
+    .clear()
+    .ellipse(5, 14, width * 0.44, width * 0.105)
+    .fill({ color: 0x070403, alpha: active ? 0.24 : 0.18 })
+    .ellipse(-5, 6, width * 0.32, width * 0.085)
+    .fill({ color: 0xf3c978, alpha: (active ? 0.06 : 0.04) + pulse * 0.018 })
+    .ellipse(5, 10, width * 0.38, width * 0.075)
+    .fill({ color: accent, alpha: (active ? 0.055 : 0.035) + pulse * 0.014 });
+}
 
-  if (city.level === "settlement") {
-    graphic.roundRect(-18, -2, 36, 10, 3).fill({ color: wall, alpha: 1 }).stroke({ width: 1, color: trim, alpha: 0.52 });
-    drawBattlements(graphic, 0, -4, 30, trim, 0.64);
-    drawCentralKeep(graphic, {
-      x: 0,
-      baseY: 8,
-      width: 14,
-      height: 10 + Math.round(age * 1.4),
-      body: wallLight,
-      bright: wallBright,
-      roof,
-      trim,
-      gate,
-      windowTone,
-      accent,
-      profile,
-      active,
-    });
-    if (profile.districtPattern === 0 || profile.districtPattern === 3) {
-      drawDistrictHouse(graphic, -11, 7, 9, 8 + Math.round(age * 2), wallLight, roof, trim, windowTone);
-      drawDistrictHouse(graphic, 11, 7, 9, 8 + Math.round(sprawl * 2), wallBright, roof, trim, windowTone);
-    } else if (profile.districtPattern === 1) {
-      drawDistrictHouse(graphic, -13, 7, 10, 8 + Math.round(age * 2), wallLight, roof, trim, windowTone);
-      drawDistrictHouse(graphic, 8, 7, 8, 7 + Math.round(sprawl), wallBright, roof, trim, windowTone);
-      drawDistrictHouse(graphic, 17, 8, 7, 6, mixColor(wallBright, districtTint, 0.22), roof, trim, windowTone);
-    } else {
-      drawDistrictHouse(graphic, 13, 7, 10, 8 + Math.round(sprawl * 2), wallBright, roof, trim, windowTone);
-      drawDistrictHouse(graphic, -8, 7, 8, 7 + Math.round(age), wallLight, roof, trim, windowTone);
-      drawDistrictHouse(graphic, -17, 8, 7, 6, mixColor(wallLight, districtTint, 0.22), roof, trim, windowTone);
-    }
-    if (oldQuarter) {
-      drawDistrictHouse(graphic, -22, 8, 8, 7, mixColor(wallLight, 0x3d352f, 0.24), mixColor(roof, 0x6a6259, 0.18), trim, windowTone);
-    }
-    drawPennant(graphic, 0, -1, accent, 1, active);
-    drawDisciplineSigil(graphic, city, 0, 3, accent);
-    return;
-  }
+function createCityGroundLight(city: RenderCity, active: boolean) {
+  const graphic = new Graphics();
 
-  if (city.level === "town") {
-    graphic.roundRect(-22, -7, 44, 16, 3).fill({ color: wall, alpha: 1 }).stroke({ width: 1.15, color: trim, alpha: 0.58 });
-    drawBattlements(graphic, 0, -10, 38, trim, 0.66);
-    drawTower(graphic, -towerSpread + 7, 7, 10, leftTowerHeight, wallLight, roof, trim, windowTone);
-    drawTower(graphic, towerSpread - 7, 7, 10, rightTowerHeight, wallLight, roof, trim, windowTone);
-    drawCentralKeep(graphic, {
-      x: 0,
-      baseY: 9,
-      width: 16,
-      height: 20 + Math.round(age * 2),
-      body: wall,
-      bright: wallBright,
-      roof,
-      trim,
-      gate,
-      windowTone,
-      accent,
-      profile,
-      active,
-    });
-    if (profile.districtPattern === 0) {
-      drawDistrictHouse(graphic, -26, 7, 9, 8 + Math.round(sprawl * 2), districtTint, roof, trim, windowTone);
-      drawDistrictHouse(graphic, 26, 7, 9, 8 + Math.round(age * 2), districtTint, roof, trim, windowTone);
-    } else if (profile.districtPattern === 1) {
-      drawDistrictHouse(graphic, -28, 7, 10, 8 + Math.round(sprawl * 2), districtTint, roof, trim, windowTone);
-      drawDistrictHouse(graphic, 24, 8, 7, 6 + Math.round(age), mixColor(districtTint, wallBright, 0.18), roof, trim, windowTone);
-      drawDistrictHouse(graphic, 33, 9, 7, 6, mixColor(wallLight, districtTint, 0.24), roof, trim, windowTone);
-    } else if (profile.districtPattern === 2) {
-      drawDistrictHouse(graphic, 28, 7, 10, 8 + Math.round(age * 2), districtTint, roof, trim, windowTone);
-      drawDistrictHouse(graphic, -24, 8, 7, 6 + Math.round(sprawl), mixColor(districtTint, wallBright, 0.18), roof, trim, windowTone);
-      drawDistrictHouse(graphic, -33, 9, 7, 6, mixColor(wallLight, districtTint, 0.24), roof, trim, windowTone);
-    } else {
-      drawDistrictHouse(graphic, -22, 14, 8, 6, mixColor(districtTint, wallLight, 0.2), roof, trim, windowTone);
-      drawDistrictHouse(graphic, 22, 14, 8, 6, mixColor(districtTint, wallLight, 0.2), roof, trim, windowTone);
-    }
-    if (outerDistricts) {
-      drawDistrictHouse(graphic, -36, 9, 8, 7, mixColor(districtTint, wallBright, 0.24), roof, trim, windowTone);
-      drawDistrictHouse(graphic, 36, 9, 8, 7, mixColor(districtTint, wallBright, 0.24), roof, trim, windowTone);
-    }
-    drawPennant(graphic, -towerSpread + 7, -5, accent, -1, active);
-    drawPennant(graphic, towerSpread - 7, -5, accent, 1, active);
-    drawDisciplineSigil(graphic, city, 0, 3, accent);
-    return;
-  }
+  graphic.eventMode = "none";
+  drawCityGroundLight(graphic, city, active);
 
-  if (city.level === "city") {
-    graphic.roundRect(-28, -9, 56, 18, 4).fill({ color: wall, alpha: 1 }).stroke({ width: 1.2, color: trim, alpha: 0.62 });
-    drawBattlements(graphic, 0, -12, 48, trim, 0.68);
-    drawTower(graphic, -towerSpread, 7, 10, leftTowerHeight + 3, wallLight, roof, trim, windowTone);
-    drawTower(graphic, towerSpread, 7, 10, rightTowerHeight + 3, wallLight, roof, trim, windowTone);
-    if (profile.extraTower) {
-      drawTower(graphic, 0, 4, 8, 12 + Math.round(prestige * 2), mixColor(wallLight, wallBright, 0.3), roof, trim, windowTone);
-    }
-    drawCentralKeep(graphic, {
-      x: 0,
-      baseY: 9,
-      width: 18,
-      height: 22 + Math.round(prestige * 3),
-      body: wall,
-      bright: wallBright,
-      roof,
-      trim,
-      gate,
-      windowTone,
-      accent,
-      profile,
-      active,
-    });
-    if (profile.districtPattern === 0) {
-      drawDistrictHouse(graphic, -31, 8, 10, 9 + Math.round(sprawl * 2), districtTint, roof, trim, windowTone);
-      drawDistrictHouse(graphic, 31, 8, 10, 9 + Math.round(sprawl * 2), districtTint, roof, trim, windowTone);
-      drawDistrictHouse(graphic, -10, 14, 8, 6.5 + age * 1.4, mixColor(wallLight, districtTint, 0.18), roof, trim, windowTone);
-      drawDistrictHouse(graphic, 10, 14, 8, 6.5 + age * 1.4, mixColor(wallLight, districtTint, 0.18), roof, trim, windowTone);
-    } else if (profile.districtPattern === 1) {
-      drawDistrictHouse(graphic, -34, 8, 11, 10 + Math.round(sprawl * 2), districtTint, roof, trim, windowTone);
-      drawDistrictHouse(graphic, -18, 14, 8, 7, mixColor(wallLight, districtTint, 0.18), roof, trim, windowTone);
-      drawDistrictHouse(graphic, 24, 10, 8, 7, mixColor(districtTint, wallBright, 0.24), roof, trim, windowTone);
-    } else if (profile.districtPattern === 2) {
-      drawDistrictHouse(graphic, 34, 8, 11, 10 + Math.round(sprawl * 2), districtTint, roof, trim, windowTone);
-      drawDistrictHouse(graphic, 18, 14, 8, 7, mixColor(wallLight, districtTint, 0.18), roof, trim, windowTone);
-      drawDistrictHouse(graphic, -24, 10, 8, 7, mixColor(districtTint, wallBright, 0.24), roof, trim, windowTone);
-    } else {
-      drawDistrictHouse(graphic, -21, 14, 8, 6.5 + age * 1.4, mixColor(wallLight, districtTint, 0.18), roof, trim, windowTone);
-      drawDistrictHouse(graphic, 0, 16, 7, 5.6, mixColor(districtTint, wallBright, 0.24), roof, trim, windowTone);
-      drawDistrictHouse(graphic, 21, 14, 8, 6.5 + age * 1.4, mixColor(wallLight, districtTint, 0.18), roof, trim, windowTone);
-    }
-    if (outerDistricts) {
-      drawDistrictHouse(graphic, -42, 10, 9, 8, mixColor(districtTint, wallBright, 0.3), roof, trim, windowTone);
-      drawDistrictHouse(graphic, 42, 10, 9, 8, mixColor(districtTint, wallBright, 0.3), roof, trim, windowTone);
-    }
-    drawPennant(graphic, -towerSpread, -7, accent, -1, active);
-    drawPennant(graphic, towerSpread, -7, accent, 1, active);
-    drawDisciplineSigil(graphic, city, 0, 4, accent);
-    return;
-  }
+  return graphic;
+}
 
-  if (city.level === "capital") {
-    graphic.roundRect(-31, -10, 62, 20, 4).fill({ color: wall, alpha: 1 }).stroke({ width: 1.25, color: trim, alpha: 0.66 });
-    drawBattlements(graphic, 0, -13, 54, trim, 0.72);
-    drawTower(graphic, -towerSpread - 1, 7, 11, leftTowerHeight + 6, wallLight, roof, trim, windowTone);
-    drawTower(graphic, towerSpread + 1, 7, 11, rightTowerHeight + 6, wallLight, roof, trim, windowTone);
-    if (profile.extraTower) {
-      drawTower(graphic, 0, 4, 9, 15 + Math.round(prestige * 2), mixColor(wallLight, wallBright, 0.3), roof, trim, windowTone);
-    }
-    drawCentralKeep(graphic, {
-      x: 0,
-      baseY: 10,
-      width: 20,
-      height: 27 + Math.round(prestige * 4),
-      body: wall,
-      bright: wallBright,
-      roof,
-      trim,
-      gate,
-      windowTone,
-      accent,
-      profile,
-      active,
-    });
-    if (profile.districtPattern === 0) {
-      drawDistrictHouse(graphic, -34, 8, 11, 9 + Math.round(sprawl * 2), districtTint, roof, trim, windowTone);
-      drawDistrictHouse(graphic, 34, 8, 11, 9 + Math.round(sprawl * 2), districtTint, roof, trim, windowTone);
-      drawDistrictHouse(graphic, -14, 15, 9, 7 + age * 1.6, wallLight, roof, trim, windowTone);
-      drawDistrictHouse(graphic, 14, 15, 9, 7 + age * 1.6, wallLight, roof, trim, windowTone);
-    } else if (profile.districtPattern === 1) {
-      drawDistrictHouse(graphic, -38, 8, 12, 10 + Math.round(sprawl * 2), districtTint, roof, trim, windowTone);
-      drawDistrictHouse(graphic, -20, 15, 9, 7 + age * 1.4, wallLight, roof, trim, windowTone);
-      drawDistrictHouse(graphic, 18, 13, 8, 7, mixColor(districtTint, wallBright, 0.24), roof, trim, windowTone);
-    } else if (profile.districtPattern === 2) {
-      drawDistrictHouse(graphic, 38, 8, 12, 10 + Math.round(sprawl * 2), districtTint, roof, trim, windowTone);
-      drawDistrictHouse(graphic, 20, 15, 9, 7 + age * 1.4, wallLight, roof, trim, windowTone);
-      drawDistrictHouse(graphic, -18, 13, 8, 7, mixColor(districtTint, wallBright, 0.24), roof, trim, windowTone);
-    } else {
-      drawDistrictHouse(graphic, -22, 16, 8, 7, wallLight, roof, trim, windowTone);
-      drawDistrictHouse(graphic, 0, 17, 8, 6, mixColor(districtTint, wallBright, 0.22), roof, trim, windowTone);
-      drawDistrictHouse(graphic, 22, 16, 8, 7, wallLight, roof, trim, windowTone);
-    }
-    if (outerDistricts) {
-      drawDistrictHouse(graphic, -45, 10, 9, 8, mixColor(districtTint, wallBright, 0.28), roof, trim, windowTone);
-      drawDistrictHouse(graphic, 45, 10, 9, 8, mixColor(districtTint, wallBright, 0.28), roof, trim, windowTone);
-    }
-    drawPennant(graphic, -towerSpread - 1, -10, accent, -1, active);
-    drawPennant(graphic, towerSpread + 1, -10, accent, 1, active);
-    drawPennant(graphic, 0, -17, accent, 1, active);
-    if (ceremonialCrown) {
-      graphic.circle(0, -34, 6).fill({ color: mixColor(accent, 0xf1dfb1, 0.35), alpha: 0.9 });
-      graphic.circle(0, -34, 12).fill({ color: accent, alpha: active ? 0.18 : 0.1 });
-    }
-    drawDisciplineSigil(graphic, city, 0, 4, accent);
-    return;
-  }
+function createCityArtwork(city: RenderCity, active: boolean) {
+  const path = `/assets/cities/${getCityArtworkFileSlug(city)}.png`;
+  const artwork = Sprite.from(Assets.get(path) ?? path);
 
-  graphic.roundRect(-32, -11, 64, 21, 4.5).fill({ color: wall, alpha: 1 }).stroke({ width: 1.3, color: trim, alpha: 0.68 });
-  drawBattlements(graphic, 0, -14, 56, trim, 0.74);
-  drawTower(graphic, -towerSpread - 2, 7, 11, leftTowerHeight + 8, wallLight, roof, trim, windowTone);
-  drawTower(graphic, towerSpread + 2, 7, 11, rightTowerHeight + 8, wallLight, roof, trim, windowTone);
-  if (profile.extraTower) {
-    drawTower(graphic, 0, 3, 10, 18 + Math.round(prestige * 2), mixColor(wallLight, wallBright, 0.34), roof, trim, windowTone);
-  }
-  drawCentralKeep(graphic, {
-    x: 0,
-    baseY: 10,
-    width: 24,
-    height: 18 + Math.round(prestige * 4),
-    body: wall,
-    bright: wallBright,
-    roof,
-    trim,
-    gate,
-    windowTone,
-    accent,
-    profile,
-    active,
+  artwork.anchor.set(0.5, 0.62);
+  artwork.eventMode = "none";
+  setCityArtworkState(artwork, city, active);
+
+  return artwork;
+}
+
+function setCityArtworkState(artwork: Sprite, city: RenderCity, active: boolean) {
+  const width = getCityArtworkWidth(city) * (active ? 1.06 : 1);
+
+  artwork.width = width;
+  artwork.height = width * (2 / 3);
+  artwork.alpha = active ? 1 : 0.94;
+}
+
+function getCityShadowScale(city: RenderCity) {
+  const radiusScale = clamp(city.radius / 24, 0.72, 1.45);
+  const levelScale =
+    city.level === "wonder"
+      ? 1.12
+      : city.level === "capital"
+        ? 1.06
+        : city.level === "city"
+          ? 1
+          : city.level === "town"
+            ? 0.92
+            : 0.84;
+
+  return radiusScale * levelScale;
+}
+
+function setCityShadowState(shadow: Sprite, city: RenderCity, active: boolean) {
+  const width = getCityArtworkWidth(city) * getCityShadowScale(city) * (active ? 0.92 : 0.88);
+
+  shadow.width = width;
+  shadow.height = width * 0.36;
+  shadow.alpha = active ? 0.48 : 0.36;
+  shadow.position.set(1, 20 + (1 - getCityShadowScale(city)) * 3);
+}
+
+function drawCitySparkle(graphic: Graphics, color: number, size: number) {
+  graphic
+    .clear()
+    .poly([0, -size, size * 0.34, 0, 0, size, -size * 0.34, 0], true)
+    .fill({ color, alpha: 0.9 })
+    .stroke({ width: 0.7, color: 0xfff3d4, alpha: 0.54, join: "round" })
+    .circle(0, 0, size * 1.24)
+    .fill({ color, alpha: 0.14 })
+    .moveTo(-size * 1.6, 0)
+    .lineTo(size * 1.6, 0)
+    .moveTo(0, -size * 1.6)
+    .lineTo(0, size * 1.6)
+    .stroke({ width: 0.75, color: 0xfff3d4, alpha: 0.34, cap: "round" });
+}
+
+function drawCityTopLight(graphic: Graphics, color: number, width: number) {
+  graphic
+    .clear()
+    .ellipse(-width * 0.16, -width * 0.16, width * 0.36, width * 0.13)
+    .fill({ color: 0xffe0a0, alpha: 0.055 })
+    .ellipse(-width * 0.22, -width * 0.24, width * 0.22, width * 0.08)
+    .fill({ color, alpha: 0.075 })
+    .moveTo(-width * 0.5, -width * 0.04)
+    .lineTo(width * 0.12, width * 0.14)
+    .stroke({ width: 1.4, color: 0x1a1008, alpha: 0.08, cap: "round" });
+}
+
+function createCityAnimation(city: RenderCity, active: boolean): CityAnimationNode {
+  const root = new Container();
+  root.eventMode = "none";
+
+  const palette = getCityIconPalette(city, active);
+  const artworkWidth = getCityArtworkWidth(city);
+  const radius = artworkWidth * 0.46;
+  const topY = -artworkWidth * 0.25;
+  const seed = hashString(`${city.slug}:city-animation`) % 1000;
+  const signal = new Graphics();
+  drawCityTopLight(signal, palette.light, artworkWidth);
+  signal.y = topY * 0.18;
+  root.addChild(signal);
+
+  const shimmer = new Graphics();
+  shimmer
+    .moveTo(-radius * 0.46, -artworkWidth * 0.08)
+    .lineTo(-radius * 0.24, -artworkWidth * 0.08)
+    .moveTo(radius * 0.18, -artworkWidth * 0.02)
+    .lineTo(radius * 0.42, -artworkWidth * 0.02)
+    .moveTo(-radius * 0.14, -artworkWidth * 0.17)
+    .lineTo(radius * 0.14, -artworkWidth * 0.17)
+    .stroke({ width: 1.15, color: palette.light, alpha: 0.3, cap: "round" });
+  root.addChild(shimmer);
+
+  const spark = new Graphics();
+  drawCitySparkle(spark, palette.accent, 4.2);
+  root.addChild(spark);
+
+  const sparklePositions = [
+    { x: -radius * 0.48, y: -artworkWidth * 0.18 },
+    { x: radius * 0.42, y: -artworkWidth * 0.2 },
+    { x: -radius * 0.58, y: artworkWidth * 0.02 },
+    { x: radius * 0.56, y: artworkWidth * 0.04 },
+    { x: -radius * 0.18, y: -artworkWidth * 0.28 },
+    { x: radius * 0.14, y: artworkWidth * 0.14 },
+  ];
+  const sparkles = sparklePositions.map((position, index) => {
+    const graphic = new Graphics();
+    const size = 2.4 + ((seed + index * 17) % 18) / 10;
+    drawCitySparkle(graphic, index % 2 === 0 ? palette.light : palette.accent, size);
+    graphic.position.set(position.x, position.y);
+    graphic.alpha = 0;
+    root.addChild(graphic);
+
+    return {
+      graphic,
+      x: position.x,
+      y: position.y,
+      phase: ((seed % 97) / 97 + index * 0.17) % 1,
+      size,
+    };
   });
-  if (profile.shrine) {
-    graphic.circle(0, -28, 8.5).fill({ color: windowTone, alpha: 0.96 });
-    graphic.circle(0, -28, 16).fill({ color: accent, alpha: active ? 0.26 : 0.16 });
-  }
-  if (profile.districtPattern === 0) {
-    drawDistrictHouse(graphic, -36, 8, 12, 9.5 + Math.round(sprawl * 2), districtTint, roof, trim, windowTone);
-    drawDistrictHouse(graphic, 36, 8, 12, 9.5 + Math.round(sprawl * 2), districtTint, roof, trim, windowTone);
-    drawDistrictHouse(graphic, -14, 15, 10, 7 + age * 1.8, wallLight, roof, trim, windowTone);
-    drawDistrictHouse(graphic, 14, 15, 10, 7 + age * 1.8, wallLight, roof, trim, windowTone);
-  } else if (profile.districtPattern === 1) {
-    drawDistrictHouse(graphic, -40, 8, 13, 10 + Math.round(sprawl * 2), districtTint, roof, trim, windowTone);
-    drawDistrictHouse(graphic, -18, 16, 10, 7 + age * 1.6, wallLight, roof, trim, windowTone);
-    drawDistrictHouse(graphic, 10, 14, 9, 7, mixColor(districtTint, wallBright, 0.26), roof, trim, windowTone);
-    drawDistrictHouse(graphic, 24, 12, 8, 6.5, mixColor(districtTint, wallBright, 0.18), roof, trim, windowTone);
-  } else if (profile.districtPattern === 2) {
-    drawDistrictHouse(graphic, 40, 8, 13, 10 + Math.round(sprawl * 2), districtTint, roof, trim, windowTone);
-    drawDistrictHouse(graphic, 18, 16, 10, 7 + age * 1.6, wallLight, roof, trim, windowTone);
-    drawDistrictHouse(graphic, -10, 14, 9, 7, mixColor(districtTint, wallBright, 0.26), roof, trim, windowTone);
-    drawDistrictHouse(graphic, -24, 12, 8, 6.5, mixColor(districtTint, wallBright, 0.18), roof, trim, windowTone);
-  } else {
-    drawDistrictHouse(graphic, -22, 17, 9, 7, wallLight, roof, trim, windowTone);
-    drawDistrictHouse(graphic, 0, 18, 8, 6.2, mixColor(districtTint, wallBright, 0.28), roof, trim, windowTone);
-    drawDistrictHouse(graphic, 22, 17, 9, 7, wallLight, roof, trim, windowTone);
-  }
-  if (outerDistricts) {
-    drawDistrictHouse(graphic, -48, 10, 10, 8.5, mixColor(districtTint, wallBright, 0.34), roof, trim, windowTone);
-    drawDistrictHouse(graphic, 48, 10, 10, 8.5, mixColor(districtTint, wallBright, 0.34), roof, trim, windowTone);
-  }
-  if (oldQuarter) {
-    drawDistrictHouse(graphic, -24, 17, 8, 6.5, mixColor(wallLight, 0x3f382f, 0.18), mixColor(roof, 0x675f58, 0.18), trim, windowTone);
-    drawDistrictHouse(graphic, 24, 17, 8, 6.5, mixColor(wallLight, 0x3f382f, 0.18), mixColor(roof, 0x675f58, 0.18), trim, windowTone);
-  }
-  drawPennant(graphic, -towerSpread - 2, -11, accent, -1, active);
-  drawPennant(graphic, towerSpread + 2, -11, accent, 1, active);
-  drawPennant(graphic, 0, -36, accent, 1, active);
-  graphic.circle(0, -36, 15).fill({ color: accent, alpha: active ? 0.22 : 0.12 });
-  drawDisciplineSigil(graphic, city, 0, 4, accent);
+
+  return {
+    root,
+    signal,
+    shimmer,
+    spark,
+    sparkles,
+    seed,
+    accent: palette.accent,
+  };
+}
+
+function updateCityAnimations(scene: SceneRefs, elapsedMs: number) {
+  scene.cityNodes.forEach((node) => {
+    const phase = elapsedMs * 0.001 + node.animation.seed * 0.017;
+    const slow = (Math.sin(phase * 1.45) + 1) / 2;
+    const sparkCycle = (phase * 0.42) % 1;
+    const shadowScale = getCityShadowScale(node.city);
+
+    node.shadow.alpha = (node.active ? 0.46 : 0.34) + slow * 0.025;
+    node.shadow.position.set(1, 20 + (1 - shadowScale) * 3);
+    drawCityGroundLight(node.groundLight, node.city, node.active, phase);
+    node.animation.root.alpha = node.active ? 0.86 : 0.58;
+    node.animation.signal.alpha = 0.32 + slow * (node.active ? 0.12 : 0.08);
+    node.animation.signal.scale.set(0.98 + slow * 0.04);
+
+    node.animation.shimmer.alpha = 0.18 + slow * (node.active ? 0.24 : 0.14);
+    node.animation.shimmer.x = Math.sin(phase * 0.7) * 0.8;
+
+    node.animation.spark.alpha = Math.sin(sparkCycle * Math.PI) * (node.active ? 0.62 : 0.36);
+    node.animation.spark.x = node.radius * 0.36 + Math.sin(phase) * 2;
+    node.animation.spark.y = 2 - sparkCycle * 14;
+    node.animation.spark.scale.set(0.72 + sparkCycle * 0.18);
+
+    node.animation.sparkles.forEach((sparkle, index) => {
+      const cycle = (phase * (0.18 + index * 0.018) + sparkle.phase) % 1;
+      const pulse = Math.sin(cycle * Math.PI);
+      const drift = Math.sin(phase * 0.7 + index) * 1.8;
+      sparkle.graphic.alpha = Math.max(0, pulse) * (node.active ? 0.92 : 0.58);
+      sparkle.graphic.position.set(sparkle.x + drift, sparkle.y - cycle * 8);
+      sparkle.graphic.rotation = phase * 0.35 + index * 0.8;
+      sparkle.graphic.scale.set(0.45 + pulse * (node.active ? 0.72 : 0.46));
+    });
+  });
 }
 
 function drawGreatWorkMonument(graphic: Graphics, city: RenderCity, title: string, active: boolean) {
@@ -1045,9 +1392,14 @@ function drawGreatWorkMonument(graphic: Graphics, city: RenderCity, title: strin
 function createUnitSprite(descriptor: UnitDescriptor) {
   const container = new Container();
   const color = toPixiColor(descriptor.color);
+  const glow = new Graphics();
+  glow.circle(0, 0, 12).fill({ color, alpha: 0.09 });
+  glow.circle(0, 0, 7).fill({ color, alpha: 0.12 });
+  container.addChild(glow);
+
   const base = new Graphics();
-  base.circle(0, 11, 12).fill({ color: 0x000000, alpha: 0.22 });
-  base.ellipse(0, 11, 12, 4.8).fill({ color: 0x000000, alpha: 0.22 });
+  base.ellipse(3, 13, 15, 5.8).fill({ color: 0x000000, alpha: 0.3 });
+  base.ellipse(0, 10, 9, 3.7).fill({ color, alpha: 0.14 });
   container.addChild(base);
 
   const accent = new Graphics();
@@ -1056,9 +1408,12 @@ function createUnitSprite(descriptor: UnitDescriptor) {
 
   if (descriptor.type === "robot") {
     accent.roundRect(-6, -2, 12, 10, 2.6).fill({ color, alpha: 0.86 });
+    accent.roundRect(1.4, -1, 3.8, 8, 1.4).fill({ color: 0xffffff, alpha: 0.12 });
     accent.roundRect(-4.4, -12, 8.8, 8, 2.2).fill({ color: body, alpha: 0.92 }).stroke({ width: 1, color, alpha: 1 });
     accent.circle(-1.6, -8, 1.2).fill({ color, alpha: 1 });
     accent.circle(1.6, -8, 1.2).fill({ color, alpha: 1 });
+    accent.circle(-1.6, -8, 4.2).fill({ color, alpha: 0.14 });
+    accent.circle(1.6, -8, 4.2).fill({ color, alpha: 0.14 });
     accent.moveTo(-8, -1).lineTo(-12, 4).stroke({ width: 1.3, color, alpha: 1, cap: "round" });
     accent.moveTo(8, -1).lineTo(12, 4).stroke({ width: 1.3, color, alpha: 1, cap: "round" });
     accent.moveTo(-3, 8).lineTo(-5, 13).stroke({ width: 1.3, color, alpha: 1, cap: "round" });
@@ -1075,6 +1430,7 @@ function createUnitSprite(descriptor: UnitDescriptor) {
       .lineTo(-10, 5)
       .closePath()
       .fill({ color, alpha: 0.84 });
+    accent.moveTo(-6, -2).quadraticCurveTo(1, -6, 9, -1).stroke({ width: 1, color: 0xffffff, alpha: 0.16, cap: "round" });
     accent.moveTo(2, -6).lineTo(7, -12).lineTo(10, -10).lineTo(7, -4).stroke({ width: 1.2, color, alpha: 1, cap: "round", join: "round" });
     accent.moveTo(-6, 8).lineTo(-7, 14).stroke({ width: 1.25, color, alpha: 1, cap: "round" });
     accent.moveTo(-1, 8).lineTo(-1, 14).stroke({ width: 1.25, color, alpha: 1, cap: "round" });
@@ -1092,6 +1448,7 @@ function createUnitSprite(descriptor: UnitDescriptor) {
       .bezierCurveTo(-9, 10, -12, 9, -12, 6)
       .closePath()
       .fill({ color, alpha: 0.84 });
+    accent.moveTo(-7, 0).quadraticCurveTo(0, -5, 8, 1).stroke({ width: 1, color: 0xffffff, alpha: 0.15, cap: "round" });
     accent.circle(10, -2.5, 2).fill({ color, alpha: 1 });
     accent.moveTo(-8, 10).lineTo(-9, 15).stroke({ width: 1.15, color, alpha: 1, cap: "round" });
     accent.moveTo(-2, 10).lineTo(-2, 15).stroke({ width: 1.15, color, alpha: 1, cap: "round" });
@@ -1100,6 +1457,7 @@ function createUnitSprite(descriptor: UnitDescriptor) {
     accent.roundRect(-3.5, 0.5, 7, 5, 1.2).fill({ color: 0x120c09, alpha: 0.78 }).stroke({ width: 0.8, color, alpha: 1 });
   } else if (descriptor.type === "scout") {
     accent.poly([-9, 6, 0, -10, 9, 6], true).fill({ color, alpha: 0.82 });
+    accent.poly([-5, 4, 0, -6, 5, 4], true).fill({ color: 0xffffff, alpha: 0.12 });
     accent.moveTo(-1, -4).lineTo(8, -12).stroke({ width: 1.2, color, alpha: 1, cap: "round" });
     accent.circle(9.5, -13, 1.8).fill({ color, alpha: 1 });
     accent.roundRect(-2.4, 6, 4.8, 6, 1.4).fill({ color: body, alpha: 0.78 }).stroke({ width: 0.8, color, alpha: 1 });
@@ -1110,12 +1468,14 @@ function createUnitSprite(descriptor: UnitDescriptor) {
       .bezierCurveTo(3, -8, 7, -2, 7, 8)
       .closePath()
       .fill({ color, alpha: 0.78 });
+    accent.circle(0, -3, 9).fill({ color, alpha: 0.1 });
     accent.moveTo(-2, -12).bezierCurveTo(-2, -15, 2, -15, 2, -12).stroke({ width: 1.1, color, alpha: 1, cap: "round" });
     accent.circle(0, -14, 1.9).fill({ color, alpha: 1 });
     accent.moveTo(9, 8).lineTo(9, -4).stroke({ width: 1.2, color, alpha: 1, cap: "round" });
     accent.circle(9, -6.5, 1.8).fill({ color, alpha: 1 });
   } else if (descriptor.type === "archer") {
     accent.circle(0, -9, 2.1).fill({ color, alpha: 1 });
+    accent.circle(0, -9, 5.2).fill({ color, alpha: 0.12 });
     accent.moveTo(0, -6).lineTo(0, 4).stroke({ width: 1.25, color, alpha: 1, cap: "round" });
     accent.moveTo(-6, -1).lineTo(4, -3).stroke({ width: 1.25, color, alpha: 1, cap: "round" });
     accent.moveTo(-1, 4).lineTo(-4, 12).stroke({ width: 1.25, color, alpha: 1, cap: "round" });
@@ -1131,6 +1491,7 @@ function createUnitSprite(descriptor: UnitDescriptor) {
       .fill({ color: body, alpha: 0.84 })
       .stroke({ width: 1, color, alpha: 0.68 });
     base.circle(0, -7, 3.8).fill({ color: skin, alpha: 1 }).stroke({ width: 0.6, color: 0x361e12, alpha: 0.4 });
+    base.moveTo(-3, -5.8).quadraticCurveTo(0, -8.4, 3, -5.8).stroke({ width: 0.8, color: 0xffffff, alpha: 0.18, cap: "round" });
 
     if (descriptor.type === "trader") {
       accent.roundRect(-9, -1, 5, 7, 1.5).fill({ color, alpha: 0.82 });
@@ -1151,6 +1512,8 @@ function createUnitSprite(descriptor: UnitDescriptor) {
     }
   }
 
+  accent.moveTo(-7, -1).quadraticCurveTo(0, -8, 7, -1).stroke({ width: 0.8, color: 0xffffff, alpha: 0.18, cap: "round" });
+  accent.circle(0, 0, 15).stroke({ width: 0.8, color, alpha: 0.26 });
   container.addChild(accent);
 
   const ring = new Graphics();
@@ -1184,6 +1547,8 @@ function getUnitVisibilityAlpha(
 
 function createScene(viewport: Viewport) {
   const terrainLayer = new Container();
+  const terrainBorderGlow = new Graphics();
+  const tileWireLayer = new Container();
   const routeLayer = new Container();
   const improvementLayer = new Container();
   const greatWorkLayer = new Container();
@@ -1192,6 +1557,10 @@ function createScene(viewport: Viewport) {
   const unitLayer = new Container();
 
   terrainLayer.label = "terrain";
+  terrainBorderGlow.label = "terrain-border-glow";
+  terrainBorderGlow.eventMode = "none";
+  tileWireLayer.label = "tile-wires";
+  tileWireLayer.eventMode = "none";
   routeLayer.label = "routes";
   improvementLayer.label = "improvements";
   greatWorkLayer.label = "greatWorks";
@@ -1200,10 +1569,14 @@ function createScene(viewport: Viewport) {
   unitLayer.label = "units";
   greatWorkLabelLayer.sortableChildren = true;
 
-  viewport.addChild(terrainLayer, routeLayer, improvementLayer, greatWorkLayer, cityLayer, greatWorkLabelLayer, unitLayer);
+  viewport.addChild(terrainLayer, tileWireLayer, routeLayer, improvementLayer, greatWorkLayer, cityLayer, greatWorkLabelLayer, unitLayer);
 
   return {
     terrainLayer,
+    terrainBorderGlow,
+    tileWireLayer,
+    tileWirePackets: [],
+    tileWireAnchors: [],
     routeLayer,
     improvementLayer,
     greatWorkLayer,
@@ -1539,6 +1912,8 @@ export function WorldMapPixi({
               : null,
           routeCount: Math.floor((sceneRef.current?.routeLayer.children.length ?? 0) / 2),
           routePathCount: sceneRef.current?.routeLayer.children.length ?? 0,
+          tileWirePacketCount: sceneRef.current?.tileWirePackets.length ?? 0,
+          tileWireAnchorCount: sceneRef.current?.tileWireAnchors.length ?? 0,
           unitCount: sceneRef.current?.unitNodes.size ?? 0,
           sceneVersion,
           camera: viewportRef.current
@@ -1651,6 +2026,17 @@ export function WorldMapPixi({
           return;
         }
 
+        await Assets.load(
+          Array.from(new Set(Object.values(cityArtworkFileBySlug))).flatMap((fileSlug) => [
+            `/assets/cities/${fileSlug}.png`,
+            `/assets/cities/shadows/${fileSlug}.png`,
+          ]),
+        );
+        if (cancelled) {
+          app.destroy(true, { children: true });
+          return;
+        }
+
         if (!(app.canvas instanceof HTMLCanvasElement)) {
           throw new Error("Pixi returned a non-DOM canvas");
         }
@@ -1709,20 +2095,7 @@ export function WorldMapPixi({
           const rimColor = mixColor(rimBase, fillColor, 0.36);
           const shadeColor = mixColor(shadeBase, 0x141110, 0.18);
 
-          terrainBase
-            .poly(parsePolygonPoints(hex.points), true)
-            .fill({ color: fillColor, alpha: hex.terrain === "coast" ? 0.9 : 0.96 })
-            .stroke({
-              width: 2.2,
-              color: rimColor,
-              alpha: 0.22,
-            });
-          terrainBase
-            .poly(parsePolygonPoints(hex.points), true)
-            .fill({ color: shadeColor, alpha: 0.09 });
-          terrainBase
-            .circle(hex.x - 11, hex.y - 14, 14)
-            .fill({ color: 0xf4ead2, alpha: hex.terrain === "coast" ? 0.048 : 0.03 + tileSeed * 0.012 });
+          drawTerrainHex(terrainBase, hex, fillColor, rimColor, shadeColor, tileSeed);
 
           const resourceKind = pickTileResource(hex, tileSeed);
           if (resourceKind) {
@@ -1730,6 +2103,7 @@ export function WorldMapPixi({
           }
         });
         scene.terrainLayer.addChild(terrainBase);
+        setupTileWirePackets(scene, staticWorldHexes, renderClockRef.current);
 
         addSimplePath(scene.terrainLayer, "M 80 610 C 240 540, 320 470, 490 490 C 670 512, 720 640, 910 620 C 1060 603, 1130 530, 1260 450", 0x7abde8, 18, 0.18);
         addSimplePath(scene.terrainLayer, "M 80 610 C 240 540, 320 470, 490 490 C 670 512, 720 640, 910 620 C 1060 603, 1130 530, 1260 450", 0x9ad5f6, 7, 0.42);
@@ -2220,15 +2594,21 @@ export function WorldMapPixi({
 
         app.ticker.add((ticker) => {
           renderClockRef.current += ticker.deltaMS;
+          const activeScene = sceneRef.current;
+          if (activeScene) {
+            drawElectricBorderGlow(activeScene.terrainBorderGlow, staticWorldHexes, renderClockRef.current);
+            updateTileWires(activeScene, renderClockRef.current);
+          }
           if (introActiveRef.current) {
             return;
           }
 
-          const activeScene = sceneRef.current;
           const activeState = currentStateRef.current;
           if (!activeScene || activeState.cities.length === 0) {
             return;
           }
+
+          updateCityAnimations(activeScene, renderClockRef.current);
 
           activeScene.unitNodes.forEach((node) => {
             if (node.routeCities.length < 2) {
@@ -2478,26 +2858,45 @@ export function WorldMapPixi({
       root.addChild(hitArea);
 
       const halo = new Graphics();
-      drawCityGlyph(
-        halo,
-        city,
+      halo.scale.set(1.06);
+      const cityActive =
         selectedSlugRef.current === city.slug ||
-          introFocusSlugRef.current === city.slug ||
-          hoveredCityRef.current === city.slug,
-      );
+        introFocusSlugRef.current === city.slug ||
+        hoveredCityRef.current === city.slug;
+      redrawCachedCityGlyph(halo, city, cityActive);
       root.addChild(halo);
 
-      const { label, background, titleText } = createBanner(city.title, city.bannerTone);
-      label.position.set(0, cityBannerOffsetY[city.slug] ?? -(city.radius + 30));
+      const groundLight = createCityGroundLight(city, cityActive);
+      root.addChild(groundLight);
+
+      const shadow = createCityShadow(city, cityActive);
+      root.addChild(shadow);
+
+      const artwork = createCityArtwork(city, cityActive);
+      root.addChild(artwork);
+
+      const animation = createCityAnimation(city, cityActive);
+      root.addChild(animation.root);
+
+      const { label, background, titleText, width } = createBanner(city.title, city.bannerTone);
+      drawRoundedLabel(background, width, city.bannerTone, cityActive);
+      label.position.set(0, getCityArtworkLabelOffset(city));
       root.addChild(label);
 
       scene.cityLayer.addChild(root);
       scene.cityNodes.set(city.slug, {
+        city,
         hitArea,
         halo,
+        groundLight,
+        shadow,
+        artwork,
+        animation,
         label,
         labelBackground: background,
         labelText: titleText,
+        labelWidth: width,
+        active: cityActive,
         radius: city.radius,
         worldX: city.x,
         worldY: city.y,
@@ -2580,8 +2979,17 @@ export function WorldMapPixi({
       }
 
       const active = slug === selectedSlug || slug === introFocusSlug || slug === hoveredCity;
-      drawCityGlyph(node.halo, city, active);
-      node.label.alpha = slug === selectedSlug || slug === introFocusSlug ? 1 : active ? 0.98 : 0.96;
+      node.city = city;
+      if (node.active !== active) {
+        redrawCachedCityGlyph(node.halo, city, active);
+        drawCityGroundLight(node.groundLight, city, active);
+        setCityShadowState(node.shadow, city, active);
+        setCityArtworkState(node.artwork, city, active);
+        drawRoundedLabel(node.labelBackground, node.labelWidth, city.bannerTone, active);
+        node.labelText.style.fill = active ? 0xfff1cf : 0xf7e8c7;
+        node.active = active;
+      }
+      node.label.alpha = slug === selectedSlug || slug === introFocusSlug ? 1 : active ? 0.98 : 0.92;
     });
 
     scene.greatWorkNodes.forEach((node, key) => {

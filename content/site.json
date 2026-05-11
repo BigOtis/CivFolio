@@ -2,7 +2,7 @@
   "title": "Project Empire",
   "tagline": "Phil Lopez's living strategy-map portfolio.",
   "description": "Project Empire maps Phil Lopez's AI products, infrastructure tooling, game prototypes, and public writing as an explorable strategy world.",
-  "baseUrl": "https://civfolio-863153693968.us-central1.run.app",
+  "baseUrl": "https://projectempire.robot-future.com",
   "navigation": [
     { "label": "World Map", "href": "/" },
     { "label": "Archive", "href": "/archive" },

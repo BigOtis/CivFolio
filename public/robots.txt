@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://civfolio-863153693968.us-central1.run.app/sitemap.xml
+Sitemap: https://projectempire.robot-future.com/sitemap.xml
