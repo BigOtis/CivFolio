@@ -420,6 +420,16 @@ test.describe("world map interactions", () => {
     await expect(page.getByTestId("intro-title")).toHaveText(/^Founding /);
     await expect.poll(async () => page.getByTestId("intro-panel").count(), { timeout: 12_000 }).toBe(0);
     await expect
+      .poll(async () => {
+        const debug = await page.evaluate(() => window.__CIVFOLIO_MAP_TEST__?.getDebug() ?? null);
+        if (!debug?.camera || !debug.explorer?.defaultCamera) {
+          return 0;
+        }
+
+        return debug.camera.zoom - debug.explorer.defaultCamera.zoom;
+      })
+      .toBeGreaterThan(0.08);
+    await expect
       .poll(async () => page.evaluate(() => window.localStorage.getItem("project-empire:intro-dismissed:v2")))
       .toBeNull();
 

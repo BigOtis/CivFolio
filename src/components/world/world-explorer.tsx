@@ -93,6 +93,32 @@ function getDefaultCamera({
   };
 }
 
+function getPostIntroCamera({
+  defaultCamera,
+  isMobile,
+  viewport,
+  world,
+}: {
+  defaultCamera: CameraState;
+  isMobile: boolean;
+  viewport: { width: number; height: number };
+  world: { width: number; height: number };
+}): CameraState {
+  if (isMobile || viewport.width <= 1 || viewport.height <= 1) {
+    return defaultCamera;
+  }
+
+  return clampCameraToViewport(
+    zoomCameraAtPoint(
+      defaultCamera,
+      Math.log(0.94 / defaultCamera.zoom),
+      { x: viewport.width * 0.5, y: viewport.height * 0.5 },
+    ),
+    viewport,
+    world,
+  );
+}
+
 // Mobile bottom-sheet height ratios as fraction of available container height.
 // peek leaves room to glance at the map; half is the comfortable read state;
 // full consumes the screen for deep reading.
@@ -895,6 +921,16 @@ export function WorldExplorer({
     }),
     [isMobile],
   );
+  const postIntroCamera = useMemo(
+    () =>
+      getPostIntroCamera({
+        defaultCamera,
+        isMobile,
+        viewport: viewportSize,
+        world: { width: world.width, height: world.height },
+      }),
+    [defaultCamera, isMobile, viewportSize, world.height, world.width],
+  );
   const terrainAtPoint = useCallback((x: number, y: number) => {
     return world.hexes.reduce<{ terrain: (typeof world.hexes)[number]["terrain"]; distance: number }>(
       (closest, hex) => {
@@ -1517,7 +1553,7 @@ export function WorldExplorer({
     introTimeoutRef.current = window.setTimeout(() => {
       if (introIndex >= introSequence.length - 1) {
         setSelectedYear(latestYear);
-        setCameraTarget(defaultCamera);
+        setCameraTarget(postIntroCamera);
         setIntroActive(false);
         return;
       }
@@ -1542,6 +1578,7 @@ export function WorldExplorer({
     isMobile,
     isTablet,
     latestYear,
+    postIntroCamera,
     selectedSlug,
     showLeader,
     world.states,
