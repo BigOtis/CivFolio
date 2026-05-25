@@ -137,6 +137,8 @@ const cityArtworkFileBySlug = {
   otisfuse: "otisfuse",
   civfolio: "projectempire",
   slopswapper: "slopswap",
+  "resume-ai": "resumeai",
+  "robot-stack": "robotstack",
 };
 
 const cityArtworkVisibleTopByFileSlug: Record<string, number> = {
@@ -149,7 +151,9 @@ const cityArtworkVisibleTopByFileSlug: Record<string, number> = {
   polylogue: 0.0273,
   popcurrent: 0.0938,
   projectempire: 0.0508,
+  resumeai: 0.035,
   robotfuture: 0.0234,
+  robotstack: 0.035,
   slopswap: 0.0352,
 };
 

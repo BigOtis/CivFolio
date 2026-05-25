@@ -1,0 +1,100 @@
+{
+  "slug": "robot-stack",
+  "title": "Robot Stack",
+  "discipline": "code",
+  "summary": "A reusable Codex skill and companion pack for deploying small agent-built websites to GitHub, MongoDB, Google Cloud Run, Cloud Storage, and custom DNS.",
+  "description": [
+    "Robot Stack is the deployment city: an opinionated skill package that gives coding agents a clear path from local web app to owned cloud infrastructure.",
+    "The README frames the stack around boring repeatability: validate local tools, guide one-time setup, store reusable config, deploy to Cloud Run with safe defaults, reconcile secrets and env vars, then verify the live service."
+  ],
+  "importance": 82,
+  "status": "active",
+  "era": "Information",
+  "startYear": 2026,
+  "tags": ["gcp", "cloud-run", "codex-skill", "deployment", "mongodb", "github"],
+  "map": {
+    "x": 1010,
+    "y": 470,
+    "terrain": "hills",
+    "region": "Cloud Run Bastion",
+    "bannerTone": "#8db7f0"
+  },
+  "links": [
+    { "label": "Repository", "url": "https://github.com/BigOtis/RobotStack", "kind": "repo" }
+  ],
+  "media": [
+    {
+      "kind": "image",
+      "src": "/assets/works/robot-stack-shot.svg",
+      "alt": "The Robot Stack repository graphic showing an agent-guided deployment flow to cloud infrastructure.",
+      "caption": "The README graphic for Robot Stack's agent-to-cloud deployment path."
+    },
+    {
+      "kind": "image",
+      "src": "/assets/works/robot-stack-city.png",
+      "alt": "A transparent cloud deployment city representing Robot Stack.",
+      "caption": "A Cloud Run bastion city for agent-guided deployments, reusable config, and low-cost owned infrastructure."
+    },
+    {
+      "kind": "image",
+      "src": "/assets/works/robot-stack-prescriptive-stack.svg",
+      "alt": "A prescriptive MongoDB and Google Cloud stack diagram from the Robot Stack repository.",
+      "caption": "The repo's prescriptive stack diagram for GitHub, MongoDB Atlas, Cloud Run, Cloud Storage, and DNS."
+    }
+  ],
+  "greatWorks": [
+    {
+      "title": "Cloud Run Bastion",
+      "summary": "A repeatable agent skill that turns deployment setup, secrets, env vars, and health checks into a guided workflow.",
+      "xOffset": 86,
+      "yOffset": -60,
+      "unlockYear": 2026
+    }
+  ],
+  "relationships": [
+    { "target": "civfolio", "type": "integration", "label": "Project Empire deployed through the same cloud pattern" },
+    { "target": "robot-future", "type": "integration", "label": "Robot Future stack formalized as a reusable skill" },
+    { "target": "localtalker", "type": "inspiration", "label": "Packaging complex setup into repeatable developer tools" }
+  ],
+  "highlights": [
+    "Encodes a prescriptive GitHub, MongoDB Atlas, Google Cloud Run, Cloud Storage, and DNS deployment path.",
+    "Includes helper scripts for bootstrap checks, reusable config, and Cloud Run deployment.",
+    "Optimizes default hosting behavior for low-traffic sites with scale-to-zero economics while staying on standard cloud primitives."
+  ],
+  "productionQueue": [
+    "Keep sharpening install paths across Codex, Claude Code, and Cursor.",
+    "Add more project-shape detection so the workflow adapts cleanly to existing apps.",
+    "Expand post-deploy verification and recovery guidance for common GCP failures."
+  ],
+  "techTree": ["Codex skills", "Claude Code commands", "PowerShell", "Google Cloud Run", "Secret Manager", "MongoDB Atlas"],
+  "diplomacy": ["Agent users", "Small-site owners", "Developers", "Cloud deployers"],
+  "tradeRoutes": ["Cloud Run deploys", "Secret bindings", "DNS setup", "Reusable stack config"],
+  "wonders": ["Agent-guided GCP deployment", "Scale-to-zero website stack"],
+  "metrics": {
+    "prestige": 8,
+    "activity": 8,
+    "stability": 7,
+    "reach": 6
+  },
+  "code": {
+    "repo": {
+      "owner": "BigOtis",
+      "name": "RobotStack"
+    },
+    "role": "Founder and primary engineer",
+    "stack": ["Codex skills", "Claude Code", "PowerShell", "GCP", "Cloud Run", "MongoDB Atlas"],
+    "features": [
+      "Agent skill packaging",
+      "Environment validation",
+      "Reusable local stack config",
+      "Cloud Run deploy helper",
+      "Secret Manager and env var reconciliation",
+      "Live health checks"
+    ],
+    "integrations": ["GitHub", "Google Cloud", "MongoDB Atlas", "Squarespace DNS", "Codex", "Claude Code", "Cursor"],
+    "architectureNotes": [
+      "Turns a known-good Robot Future deployment path into reusable instructions and scripts for other small websites.",
+      "Keeps the defaults opinionated so agents can execute reliably while still allowing existing app architecture to remain intact."
+    ]
+  }
+}

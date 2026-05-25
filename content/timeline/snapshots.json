@@ -14,7 +14,9 @@
       "robot-future": { "visible": false },
       "polylogue": { "visible": false },
       "slopswapper": { "visible": false },
-      "civfolio": { "visible": false }
+      "civfolio": { "visible": false },
+      "resume-ai": { "visible": false },
+      "robot-stack": { "visible": false }
     }
   },
   {
@@ -32,7 +34,9 @@
       "robot-future": { "visible": false },
       "polylogue": { "visible": false },
       "slopswapper": { "visible": false },
-      "civfolio": { "visible": false }
+      "civfolio": { "visible": false },
+      "resume-ai": { "visible": false },
+      "robot-stack": { "visible": false }
     }
   },
   {
@@ -50,7 +54,9 @@
       "robot-future": { "visible": false },
       "polylogue": { "visible": false },
       "slopswapper": { "visible": false },
-      "civfolio": { "visible": false }
+      "civfolio": { "visible": false },
+      "resume-ai": { "visible": false },
+      "robot-stack": { "visible": false }
     }
   },
   {
@@ -68,7 +74,9 @@
       "robot-future": { "visible": true, "cityLevel": "wonder" },
       "polylogue": { "visible": true, "cityLevel": "city" },
       "slopswapper": { "visible": true, "cityLevel": "settlement" },
-      "civfolio": { "visible": true, "cityLevel": "city" }
+      "civfolio": { "visible": true, "cityLevel": "city" },
+      "resume-ai": { "visible": true, "cityLevel": "city" },
+      "robot-stack": { "visible": true, "cityLevel": "city" }
     }
   }
 ]

@@ -39,6 +39,32 @@
       "primaryLanguage": "TypeScript",
       "pushedAt": "2026-02-10T03:21:16Z",
       "repoUrl": "https://github.com/BigOtis/SlopSwapper"
+    },
+    "BigOtis/resume-ai": {
+      "stars": 0,
+      "forks": 0,
+      "watchers": 0,
+      "openIssues": 0,
+      "closedIssues": 0,
+      "contributors": 1,
+      "releases": 1,
+      "totalCommits": 0,
+      "primaryLanguage": "HTML",
+      "pushedAt": "2026-05-25T12:19:43Z",
+      "repoUrl": "https://github.com/BigOtis/resume-ai"
+    },
+    "BigOtis/RobotStack": {
+      "stars": 0,
+      "forks": 0,
+      "watchers": 0,
+      "openIssues": 0,
+      "closedIssues": 0,
+      "contributors": 1,
+      "releases": 1,
+      "totalCommits": 0,
+      "primaryLanguage": "HTML",
+      "pushedAt": "2026-05-21T12:13:14Z",
+      "repoUrl": "https://github.com/BigOtis/RobotStack"
     }
   }
 }

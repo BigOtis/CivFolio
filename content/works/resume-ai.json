@@ -1,0 +1,99 @@
+{
+  "slug": "resume-ai",
+  "title": "Resume AI",
+  "discipline": "code",
+  "summary": "An AI-assisted resume tailoring workflow that turns confirmed profile facts and job postings into truthful, one-page HTML and PDF resumes.",
+  "description": [
+    "Resume AI is a practical job-search city: a local workflow for converting a canonical resume into targeted variants without losing factual grounding.",
+    "The project pairs editable HTML resumes with a long-form profile inventory, application tracking, and PDF verification so AI help stays useful, specific, and honest instead of becoming unsupported keyword stuffing."
+  ],
+  "importance": 76,
+  "status": "active",
+  "era": "Information",
+  "startYear": 2026,
+  "tags": ["resume", "ai", "job-search", "html", "pdf", "playwright"],
+  "map": {
+    "x": 470,
+    "y": 455,
+    "terrain": "plains",
+    "region": "Career Foundry",
+    "bannerTone": "#d7c487"
+  },
+  "links": [
+    { "label": "Repository", "url": "https://github.com/BigOtis/resume-ai", "kind": "repo" }
+  ],
+  "media": [
+    {
+      "kind": "image",
+      "src": "/assets/works/resume-ai-shot.png",
+      "alt": "The Resume AI repository hero graphic showing AI-assisted resume tailoring.",
+      "caption": "The repo graphic for the Resume AI workflow: grounded profile facts, targeted variants, and verified one-page output."
+    },
+    {
+      "kind": "image",
+      "src": "/assets/works/resume-ai-city.png",
+      "alt": "A transparent parchment city representing Resume AI.",
+      "caption": "A resume foundry city built around grounded profile facts, tailored variants, and verified one-page PDFs."
+    },
+    {
+      "kind": "image",
+      "src": "/assets/works/resume-ai-workflow.svg",
+      "alt": "A workflow diagram from the Resume AI repository.",
+      "caption": "The README workflow graphic for turning confirmed experience and job postings into tailored resume artifacts."
+    }
+  ],
+  "greatWorks": [
+    {
+      "title": "Truth-Bound Tailor",
+      "summary": "A resume workflow that adapts wording and emphasis to each role while keeping every claim tied to confirmed experience.",
+      "xOffset": 82,
+      "yOffset": -58,
+      "unlockYear": 2026
+    }
+  ],
+  "relationships": [
+    { "target": "civfolio", "type": "integration", "label": "Portfolio evidence feeding resume variants" },
+    { "target": "ibm-ai-machine-learning-engineer", "type": "inspiration", "label": "Enterprise AI experience made legible for roles" },
+    { "target": "robot-future", "type": "trade", "label": "Public proof points for job-search narrative" }
+  ],
+  "highlights": [
+    "Uses a canonical local resume plus a broader profile inventory as the source of truth.",
+    "Creates company-and-role-specific resume folders instead of mutating the master copy for every application.",
+    "Renders HTML resumes to PDF and verifies the result stays exactly one page."
+  ],
+  "productionQueue": [
+    "Keep strengthening the intake flow for job links and missing-but-truthful details.",
+    "Improve reusable prompts for role analysis, ATS vocabulary, and supported claim checking.",
+    "Expand application tracking so each submitted resume remains easy to audit later."
+  ],
+  "techTree": ["HTML", "Python", "Playwright", "PDF rendering", "Claude Code", "Codex workflows"],
+  "diplomacy": ["Job seekers", "AI agents", "Hiring managers", "Resume reviewers"],
+  "tradeRoutes": ["Profile facts", "Job postings", "Tailored resumes", "Application records"],
+  "wonders": ["Grounded resume tailoring", "One-page PDF verification"],
+  "metrics": {
+    "prestige": 7,
+    "activity": 9,
+    "stability": 7,
+    "reach": 5
+  },
+  "code": {
+    "repo": {
+      "owner": "BigOtis",
+      "name": "resume-ai"
+    },
+    "role": "Founder and primary engineer",
+    "stack": ["HTML", "Python", "Playwright", "Markdown", "Agent workflows"],
+    "features": [
+      "Canonical editable resume source",
+      "Grounded profile inventory",
+      "Role-specific tailored resume folders",
+      "Verified one-page PDF export",
+      "Application tracking table"
+    ],
+    "integrations": ["GitHub", "Claude Code", "Codex", "Playwright"],
+    "architectureNotes": [
+      "Keeps private canonical files ignored while shipping public samples and repeatable workflow guidance.",
+      "Separates broad confirmed profile facts from focused one-page resume variants so tailoring can be specific without inventing experience."
+    ]
+  }
+}

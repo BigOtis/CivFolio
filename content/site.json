@@ -32,6 +32,8 @@
       "ibm-ai-machine-learning-engineer",
       "robot-future",
       "civfolio",
+      "robot-stack",
+      "resume-ai",
       "polylogue",
       "otisfuse"
     ],
@@ -97,8 +99,24 @@
         "label": "Agent Scout",
         "type": "scout",
         "color": "#f0c57d",
-        "route": ["polylogue", "robot-future", "ibm-ai-machine-learning-engineer"],
+        "route": ["polylogue", "robot-future", "robot-stack", "ibm-ai-machine-learning-engineer"],
         "speed": 0.72
+      },
+      {
+        "id": "cloud-builder",
+        "label": "Cloud Builder",
+        "type": "builder",
+        "color": "#8db7f0",
+        "route": ["civfolio", "robot-stack", "robot-future", "localtalker"],
+        "speed": 0.57
+      },
+      {
+        "id": "resume-envoy",
+        "label": "Resume Envoy",
+        "type": "sage",
+        "color": "#d7c487",
+        "route": ["resume-ai", "civfolio", "ibm-ai-machine-learning-engineer", "robot-future"],
+        "speed": 0.53
       },
       {
         "id": "oracle-sage",
